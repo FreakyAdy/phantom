@@ -1,0 +1,50 @@
+{
+  "timestamp_utc": "2026-09-17T19:15:51.491535+00:00",
+  "model_key": "qwen3-30b-a3b",
+  "model_meta": {
+    "name": "Qwen3-30B-A3B",
+    "repo": "bartowski/Qwen2.5-Coder-32B-Instruct-GGUF",
+    "file": "Qwen2.5-Coder-32B-Instruct-Q4_K_M.gguf",
+    "params_b": 30.5,
+    "active_b": 3.3,
+    "arch": "MoE Sparse (~3.3B Active)",
+    "quant": "Q4_K_M",
+    "test_id": "test_03"
+  },
+  "hardware_preset": "colab-t4",
+  "dry_run": true,
+  "simulation": {
+    "tok_per_sec": 24.79,
+    "vram_used_gb": 14.89,
+    "ram_used_gb": 4.83,
+    "nvme_used_gb": 0.0,
+    "vram_layers": 41,
+    "ram_layers": 7,
+    "nvme_layers": 0,
+    "total_layers": 48,
+    "bottleneck": "DDR5 System RAM Bandwidth Bound (Optimal Dual-Tier Offload)"
+  },
+  "tasks": [
+    {
+      "id": "task_1_knapsack",
+      "name": "Algorithmic Dynamic Programming (0/1 Knapsack)",
+      "prompt": "Write a clean Python function knapsack(weights, values, W) using 1D space-optimized DP. What is the return value for weights=[10, 20, 30], values=[60, 100, 120], W=50? Give the final numeric answer clearly.",
+      "expected": "220",
+      "status": "PASS"
+    },
+    {
+      "id": "task_2_harmonic_mean",
+      "name": "Mathematical Deduction (Harmonic Mean Velocity)",
+      "prompt": "A train travels 120 miles from City A to City B at 60 mph, and immediately returns along the same 120-mile route from City B to City A at 40 mph. What is the average speed for the entire round trip? Show your calculation and give the final exact number.",
+      "expected": "48",
+      "status": "PASS"
+    },
+    {
+      "id": "task_3_word_reversal",
+      "name": "Code Synthesis & Whitespace Normalization",
+      "prompt": "Write a concise Python function reverse_words(s: str) -> str that reverses the order of words in a string while compressing all consecutive spaces into a single space and removing leading/trailing spaces. Use standard python idiom.",
+      "expected": "idiomatic reversed string",
+      "status": "PASS"
+    }
+  ]
+}
