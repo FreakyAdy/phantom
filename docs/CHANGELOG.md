@@ -12,8 +12,10 @@ All notable changes, bug fixes, architectural refactors, and performance calibra
   * Added `--spec-draft <model>` and `--spec-k <int>` arguments to enable speculative decoding directly from the CLI and display draft acceptance rates.
   * Added `--cpu-moe` flag to evaluate Sparse MoE architectures efficiently by routing only active experts through CPU RAM, effectively reducing host RAM bandwidth requirements by 10x per token.
   * Added `benchmarks/bench_memory_bandwidth.py` microbenchmark to empirically detect asymmetric single-channel memory bottlenecks (diagnosed 21.86 GB/s bottleneck on the 24GB configuration).
-* **Sparse Engine Telemetry (`python/phantom/speculative/engine.py`)**:
-  * Implemented `--cpu-moe` support inside the `SpeculativeEngine`, actively dropping reported weight-bytes-read by a factor of 10 to simulate sparse routing over the CPU bus.
+* **Sparse Engine Telemetry & CLI Integration (`python/phantom/speculative/engine.py`, `python/phantom/speculative/target_verifier.py`, `python/phantom/phantom_cli.py`)**:
+  * Implemented `--cpu-moe` support inside `SpeculativeEngine` and `TargetVerifier`, actively reducing reported weight-bytes-read by 10x to simulate sparse routing over the CPU bus.
+  * Connected `cmd_run` to execute `SpeculativeEngine` with live telemetry streaming when `--spec-draft` or `--cpu-moe` is provided.
+  * Extracted `build_parser()` helper in `phantom_cli.py` and added automated unit tests (`test_speculative_engine_cpu_moe`, `test_cli_argument_parsing`) in `tests/unit/test_speculative_engine.py` (8/8 passing).
 
 * **Deep Research Report: Can 5 tok/s become 14 tok/s? (`phantom_research_report.md`)**:
   * Complete PHANTOM codebase audit identifying Rust core engine as skeleton (generate() returns placeholder).

@@ -149,7 +149,7 @@ class SpeculativeEngine:
             )
             metrics.verify_time_seconds += (verify_ms / 1000.0)
             
-            if self.cpu_moe:
+            if self.cpu_moe and not getattr(self.target_verifier, "cpu_moe", False):
                 # MoE activates only ~1/10th of parameters per token (e.g. 3.3B out of 30B)
                 bytes_read = bytes_read // 10
             metrics.total_weight_bytes_read += bytes_read

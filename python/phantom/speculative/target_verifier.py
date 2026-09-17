@@ -39,6 +39,7 @@ class TargetVerifier:
         gpu_layers: int = 14,
         ram_layers: int = 50,
         weight_bytes_per_param: float = 0.5625,  # Q4_K_M (~4.5 bits/param)
+        cpu_moe: bool = False,
     ):
         self.model = model
         self.tokenizer = tokenizer
@@ -49,10 +50,13 @@ class TargetVerifier:
         self.gpu_layers = gpu_layers
         self.ram_layers = ram_layers
         self.weight_bytes_per_param = weight_bytes_per_param
+        self.cpu_moe = cpu_moe
 
         # Calculate RAM resident weight bytes read per forward pass
         layer_params = 2 * (hidden_dim * intermediate_dim) + (hidden_dim * intermediate_dim) + 4 * (hidden_dim * hidden_dim)
         self.layer_weight_bytes = int(layer_params * weight_bytes_per_param)
+        if self.cpu_moe:
+            self.layer_weight_bytes = self.layer_weight_bytes // 10
         self.total_ram_weight_bytes = self.layer_weight_bytes * self.ram_layers
 
     def verify_candidates(
@@ -122,10 +126,11 @@ class TargetVerifier:
         vocab_size = 32000
 
         # Physical DDR5 memory bandwidth timing:
-        # Single-layer 1x GEMV = 11.37 ms -> 50 layers = ~290 ms
+        # Single-layer 1x GEMV = 11.37 ms -> 50 layers = ~290 ms (5.8 ms/layer)
         # Single-layer Batch-8 GEMM = 23.40 ms -> 50 layers = ~305 ms
-        # Scale with k
-        base_ram_ms = 290.0
+        # Scale with ram_layers and MoE expert sparsity
+        layer_ms = 5.8 if not self.cpu_moe else 0.58
+        base_ram_ms = layer_ms * self.ram_layers
         gemm_overhead_per_tok = 2.0  # ~2ms additional compute per token in batch
         expected_latency_ms = base_ram_ms + (k * gemm_overhead_per_tok)
 

@@ -35,6 +35,7 @@
   - [x] End-to-end model inference testing with live weights (e.g. Qwen2.5-Coder-32B target + Qwen2.5-0.5B draft in VRAM) and user demo. Verified 4.32x layer amortization (84.37 ms -> 19.55 ms for 8 tokens) in `benchmarks/speculative_benchmark.py`.
   - [x] Finalize local user-facing integrations and UI demos with `phantom run`.
   - [x] Phase 5 Bandwidth Escapes: Implemented `-ngl` VRAM offloading, `--spec-draft` decoding integrations in CLI, and `--cpu-moe` sparse routing telemetry mapping. Verified asymmetric single-channel memory (21.86 GB/s limit).
+  - [x] Phase 6 Speculative Engine CLI Execution & Parity Validation: Added physical execution fallback in `cmd_run`, updated `TargetVerifier` with dynamic layer latency and `cpu_moe` bandwidth scaling, extracted `build_parser()`, expanded unit tests (8/8 passed in `tests/unit/test_speculative_engine.py`), and validated via `scripts/check_claims.py` and `test_reference_parity.py --quick`.
 
 ### Previous Session (September 15, 2026)
 

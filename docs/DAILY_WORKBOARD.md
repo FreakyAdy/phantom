@@ -21,6 +21,7 @@
 | ✅ | `PURGE-DEAD`| Refactoring | Execute Phase 1: Purge dead/synthetic subsystems (`wraith_lstm`, `spectral`, `neural_cache`, `core/`, `kernels/`) | Cleaned repo root & subpackages |
 | ✅ | `SPEC-CORE` | Runtime | Execute Phase 2: Build `python/phantom/speculative/` runtime (`draft_runner`, `target_verifier`, `acceptance`, `engine`) | `python/phantom/speculative/` |
 | ✅ | `SPEC-BENCH`| Benchmarks | Execute Phase 3: Build real speculative physical benchmarks with byte accounting | `benchmarks/speculative_benchmark.py` |
+| ✅ | `SPEC-OFFLOAD`| Runtime & CLI | Implement `-ngl`, `--spec-draft`, and `--cpu-moe` hardware offloading with memory bandwidth microbenchmark | `phantom_cli.py`, `benchmarks/bench_memory_bandwidth.py` |
 
 
 ---

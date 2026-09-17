@@ -176,3 +176,61 @@ def test_speculative_engine_generate():
     assert metrics.speedup_factor > 0.0
     assert metrics.total_weight_bytes_read > 0
     assert metrics.bytes_per_accepted_token_mb > 0.0
+
+
+def test_speculative_engine_cpu_moe():
+    """Verify that cpu_moe enables a 10x reduction in RAM weight bytes read."""
+    draft_runner = DraftRunner()
+    target_dense = TargetVerifier(num_layers=64, gpu_layers=14, ram_layers=50, cpu_moe=False)
+    target_moe = TargetVerifier(num_layers=64, gpu_layers=14, ram_layers=50, cpu_moe=True)
+
+    dense_engine = SpeculativeEngine(
+        draft_runner=draft_runner,
+        target_verifier=target_dense,
+        spec_k=5,
+        cpu_moe=False,
+    )
+    moe_engine = SpeculativeEngine(
+        draft_runner=draft_runner,
+        target_verifier=target_moe,
+        spec_k=5,
+        cpu_moe=True,
+    )
+
+    prompt = "MoE routing bandwidth test"
+    _, dense_metrics = dense_engine.generate(prompt=prompt, max_new_tokens=16, k=5)
+    _, moe_metrics = moe_engine.generate(prompt=prompt, max_new_tokens=16, k=5)
+
+    assert dense_metrics.total_weight_bytes_read > 0
+    assert moe_metrics.total_weight_bytes_read > 0
+    # The bytes read for MoE must be approximately 1/10th of dense
+    ratio = dense_metrics.total_weight_bytes_read / float(moe_metrics.total_weight_bytes_read)
+    assert 9.0 <= ratio <= 11.0, f"Expected ~10x reduction, got ratio {ratio}"
+
+
+def test_cli_argument_parsing():
+    """Verify CLI parser options for -ngl, --spec-draft, --spec-k, and --cpu-moe."""
+    from phantom.phantom_cli import build_parser
+
+    parser = build_parser()
+
+    # Defaults
+    args = parser.parse_args(["run", "qwen2.5-32b"])
+    assert args.n_gpu_layers == 0
+    assert args.spec_draft is None
+    assert args.spec_k == 5
+    assert args.cpu_moe is False
+
+    # Custom options
+    args_custom = parser.parse_args([
+        "run",
+        "qwen2.5-32b",
+        "-ngl", "16",
+        "--spec-draft", "qwen2.5-0.5b",
+        "--spec-k", "4",
+        "--cpu-moe",
+    ])
+    assert args_custom.n_gpu_layers == 16
+    assert args_custom.spec_draft == "qwen2.5-0.5b"
+    assert args_custom.spec_k == 4
+    assert args_custom.cpu_moe is True
