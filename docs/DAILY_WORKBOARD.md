@@ -88,6 +88,11 @@ When starting the next session, here is our queued roadmap:
 - [ ] **Live-weight E2E v2 on RTX 4050**: `phantom run qwen2.5-coder-32b --spec-mode eagle -ngl 14` with ephemeral runner + EAGLE checkpoint.
 - [ ] **Evaluate llama.cpp backend integration** for GGUF decode path.
 - [ ] **Restore full PHANTOM_Research_Analysis.md body** under `docs/specs/` if needed for reference.
+- [ ] **Remediate fabricated-PASS harnesses**: wire real inference dispatch into `tests/ephemeral_test_runner.py` (`passed=True` placeholder) and `scripts/colab_runner.py` (unconditional `status: PASS`).
+- [ ] **Fix `benchmarks/run_all.py`**: restore/replace deleted `test_needle_haystack` module so the master suite stops crashing.
+- [ ] **One number, one source remediation**: replace hardcoded metric constants (4.2 tok/s, 7.8 KV, 61.2% sparsity, 87.3% wraith, thermal 67°C) with reads from `benchmarks/results/latest.json`.
+- [ ] **Resolve doc contradictions**: SmolLM 1000 vs 366.5 tok/s; NVMe 1.43 vs 1.75 vs ~4.5 GB/s; CUDA 12.6 vs 13.3; dense-32B ceiling vs 3.63 tok/s publish.
+- [ ] **Fix or remove Triton stubs**: `kernels/attention/fused_attention.py` and `kernels/ffn/fused_ffn.py` call PyTorch fallback in all branches; `kernels/dispatch.py` arg-order bug (`use_triton`→`scale_q`/`scale_w1`).
 
 ---
 
@@ -114,3 +119,4 @@ When starting the next session, here is our queued roadmap:
 | **2026-09-15** | Repository Structure | Restructured documentation system: established Concept Map, Progress Dashboard, Changelog, ADR Decision Log, auto-updating Testing Ledger, and Daily Workboard. |
 | **2026-09-15** | Ground Truth Remediation | Completed PHANTOM Ground Truth Remediation Brief across Phases 0–7: solved 32B PCIe paradox (10 KB activation copy + in-place DDR5 SIMD), built atomic byte counter & hardware fingerprinting, rewrote benchmark suite (N>=10, ablations, `latest.json`), deleted `audit.md`, generated canonical `RESULTS.md`, updated `README.md` & `ARCHITECTURE.md`, enforced 100% PASS `scripts/check_claims.py` CI gate, authored `REPRODUCING.md`, `CONTRIBUTING.md`, `SECURITY.md`. |
 | **2026-09-18** | v2 Colab Harness | Built `scripts/colab_v2_runner.py`, MoE prefetch correlation module, notebook Step 5, merged v2 into `RESULTS.md`; dry-run PASS (`test_16`). |
+| **2026-09-18** | Full-Repo Analysis (read-only) | Audited all 166 source/doc files (~28k lines). Confirmed real hardware layer (Ollama 32B audit, bandwidth/GEMM/NVMe measurements, acceptance + live draft/verify). Flagged fabricated-verdict layer: `ephemeral_test_runner` & `colab_runner` unconditional PASS, `run_all.py` sine-wave + broken `test_needle_haystack` import, dry-run published as "Colab Live VERIFIED", EAGLE on synthetic data, Triton stub kernels, hardcoded 4.2 tok/s metric family. Recorded in TODAY.md queue. |
