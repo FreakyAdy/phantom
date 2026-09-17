@@ -6,6 +6,7 @@ Run large language models that exceed your GPU's physical VRAM by orchestrating 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-blue.svg)](https://python.org)
 [![Verified Results](https://img.shields.io/badge/Benchmarks-Canonical%20Ledger-orange.svg)](RESULTS.md)
+[![Research Report](https://img.shields.io/badge/Research-Can_5_Become_14-blueviolet.svg)](docs/specs/PHANTOM_RESEARCH_REPORT.md)
 
 ---
 
@@ -19,6 +20,20 @@ Instead, PHANTOM targets where modern open-weight AI actually delivers fluid, pr
 1. **Interactive 12.95 tok/s on 30B Sparse MoE models** (`Qwen3-30B-A3B`) — faster than human reading speed on an ordinary $800 laptop with 6.0 GB VRAM.
 2. **Reliable 2.88 to 3.63 tok/s on 32B–35B frontier coding models** (`Qwen2.5-Coder-32B`, `DeepSeek-R1-32B`, `Command-R-35B`) — real in-place DDR5 evaluation, zero OS freezes, and zero PCIe bus thrashing.
 3. **Strict Ground Truth Verification**: Model evaluations (`Qwen2.5-Coder-32B`, `Qwen3-30B-A3B`, `SmolLM-135M`) are verified against physical hardware baselines with strict greedy top-1 parity gates (`test_reference_parity.py`). Experimental subsystems (Neural Cache, Wraith prefetching, DCT quantization) are documented transparently as active research prototypes.
+
+#### 🔬 Can 5 tok/s Become 14 tok/s on Consumer Hardware?
+
+Our deep research investigation ([`PHANTOM_RESEARCH_REPORT.md`](docs/specs/PHANTOM_RESEARCH_REPORT.md) and [`PHANTOM_RESEARCH_SPEC.md`](docs/specs/PHANTOM_RESEARCH_SPEC.md)) delivers an uncompromising physical analysis:
+
+- **Dense 32B Models: Physically Impossible with Autoregressive Decode**  
+  Reading ~14 GB of RAM-resident weights from dual-channel DDR5 (~48 GB/s) every single token bounds decode speed to **~2.88–3.4 tok/s**. Sustaining 14 tok/s on a dense 32B model requires reading weights in 71 ms—demanding **~197 GB/s**, a 4.1x gap that no prefetcher, scheduler, or kernel fusion can bridge.
+- **MoE 30B Models: Already Achieved**  
+  MoE architectures (`Qwen3-30B-A3B`) evaluate only ~3.3B active parameters (~1.8 GB Q4), reading ~7.8x fewer bytes per token and achieving **12.95 tok/s (Local)** and **24.79 tok/s (Cloud)**.
+- **The Core Acceleration Directive (Milestone 1.6 / ADR-014)**  
+  To accelerate dense models, we cannot merely prefetch weights—we must **reduce target model weight passes per emitted token**. Our primary engineering vector is **lossless heterogeneous speculative decoding with batched CPU GEMM verification**:
+  - A small 0.5B draft model in GPU VRAM generates speculative tokens at high speed.
+  - The CPU/RAM target model validates candidate tokens in batches of 4 to 8, reading weights **once** for multiple validated tokens.
+  - Initial CPU AVX2 benchmarks confirm a **3.93x layer amortization factor** (23.40 ms vs 92.03 ms for 8 tokens).
 
 | Baseline Benchmark Comparison | Standard Baseline Limit | PHANTOM Tiered Runtime | Measured Improvement Multiplier |
 |---|---|---|:---:|
@@ -98,12 +113,13 @@ Breakdown of memory and hardware requirements across standard runtimes in 4-bit 
 - **Achieved (Production Ready)**:
   - Dense models up to 35B (`Qwen2.5-Coder-32B`, `DeepSeek-R1-32B`, `Command-R-35B`) running at **2.88 to 3.63 tok/s** without crashing on a 6.0 GB laptop GPU (**4.22 to 5.94 tok/s** on cloud).
   - MoE architectures up to 46.7B (`Qwen3-30B-A3B` at **12.95 tok/s**; `Mixtral-8x7B` at **2.80 tok/s**) with dynamic sparse expert routing.
-  - 8.0x KV cache compression (Neural Cache) preserving 100.0% retrieval accuracy across 32K context windows.
   - Zero-disk ephemeral execution and capacity planning with mean prediction error of ±2.4%.
-- **What we are working on (In Progress)**:
-  - **Speculative Decoding**: In-VRAM lightweight draft model integration (e.g. `Qwen2.5-0.5B` at 80+ tok/s) to multiply 32B generation throughput to 8.0–10.0 tok/s.
+  - Verified numerical reference parity gate (`test_reference_parity.py`).
+- **Active Research & Engineering Directives (Milestone 1.6 / ADR-014)**:
+  - **Heterogeneous Speculative Verification**: Integrating a lightweight 0.5B draft model in GPU VRAM (e.g. `Qwen2.5-0.5B`, ~0.3 GB) while the CPU/RAM evaluates batched verification ($k=4..8$ tokens) in a single weight pass. Physical AVX2 benchmarks confirm a **3.93x layer amortization factor** (23.40 ms vs 92.03 ms for 8 tokens).
+  - **MoE Expert Prefetching**: Utilizing router hidden states to prefetch upcoming expert weights into GPU cache.
+  - **Native Engine Refactor**: Developing high-performance fused INT4/Q4 dequantization GEMM kernels for the Rust core engine.
   - **Streaming Chunked Prefill**: Offloading prompt prefill in 512-token tiles to reduce Time-To-First-Token (TTFT) on long contexts.
-  - **Non-NVIDIA Backends**: Support for Apple Silicon (Metal) and AMD (ROCm).
 
 ---
 
@@ -158,17 +174,17 @@ PHANTOM avoids PCIe weight thrashing by adopting an **in-place hybrid execution 
 1. **Partitioned Forward Pass**: Initial layers run on GPU VRAM. When execution reaches host-offloaded layers, the GPU transfers only the intermediate activation vector ($[B=1, S=1, D=5120]$ FP16 $\approx 10\text{ KB}$) across PCIe to host memory ($1.3\ \mu\text{s}$ transfer latency).
 2. **In-Place CPU SIMD Evaluation**: Host RAM layers are evaluated directly by CPU SIMD kernels, reading weights at dual-channel DDR5 bus bandwidth (~48 GB/s). For a 32B model with 13.5 GB in RAM, reading weights at ~48 GB/s requires ~0.31s per token, delivering 2.88 to 3.4 tokens/sec.
 3. **NVMe Tile Staging**: High-speed memory-mapped staging for large context allocations and layer tiles.
-4. **Predictive Prefetching (Wraith)**: A CPU-resident LSTM micro-predictor forecasts upcoming layer transitions during autoregressive decode to overlap RAM transfers with compute.
-5. **Key-Value Cache Compression (Neural Cache)**: Reduces KV attention state memory footprint by up to 8x via low-rank latent projection.
+4. **Conditional & Sparse Routing**: Layer execution in dense transformers is deterministic; prefetching and routing optimizations are directed at *conditional* workloads (MoE expert activation and sparse MLPs) where routing varies dynamically per token.
+5. **Key-Value Cache Compression Prototype (Neural Cache)**: Experimental low-rank latent projection autoencoder designed to reduce long-context KV memory footprint.
 
-For formal mathematical derivations, data flow diagrams, and subsystem invariants, see [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
+For formal mathematical derivations, data flow diagrams, and subsystem invariants, see [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) and [`docs/specs/PHANTOM_RESEARCH_SPEC.md`](docs/specs/PHANTOM_RESEARCH_SPEC.md).
 
 ---
 
 ## Limitations and known issues
 
-- **Physical DDR5 Memory Bandwidth**: Dense models residing in system RAM cannot run faster than physical DDR5 memory bandwidth (~2.8–3.6 tok/s for 32B).
-- **Windows Host Toolchain**: The Rust core engine compiles on Linux/WSL2; on native Windows host environments without a configured Cargo toolchain, PHANTOM automatically routes execution through the accelerated Python SIMD runtime.
+- **Physical DDR5 Memory Bandwidth**: Dense models residing in system RAM cannot run faster than physical DDR5 memory bandwidth (~2.8–3.6 tok/s for 32B) without multi-token batched speculative verification.
+- **Engine Architecture State**: The native Rust core engine is currently undergoing refactoring (Milestone 1.6) to incorporate fused dequantization GEMM kernels for speculative verification; live execution currently routes through the Python tier manager and GGUF loader with PyTorch/Ollama backends.
 - **Single Process Exclusivity**: Memory-mapped tiering assumes exclusive access to free GPU VRAM and unreserved system RAM. Heavy concurrent applications will cause OS memory contention.
 
 ---
