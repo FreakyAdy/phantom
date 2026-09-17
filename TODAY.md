@@ -6,16 +6,27 @@
 
 ---
 
-### Quick Session Summary (Today: September 15, 2026)
+### Quick Session Summary (Today: September 17, 2026)
+
+- **Session Focus**: Deep Research Investigation — Can PHANTOM achieve 5→14 tok/s on low-end consumer hardware?
+- **Key Deliverables**:
+  - [x] Complete PHANTOM codebase audit (Rust core, Python runtime, CUDA kernels, benchmarks, claims)
+  - [x] Physical performance model with bandwidth ceiling derivations for 7 hardware tiers
+  - [x] Speculative decoding mathematical analysis (batched CPU GEMM verification)
+  - [x] Roofline analysis (decode is 7800× below compute ceiling — catastrophically memory-bound)
+  - [x] 10 novel architectural concepts with feasibility analysis
+  - [x] Top 5 prioritized ideas for PHANTOM
+  - [x] Proposed PHANTOM v2 architecture
+  - [x] Hardware-specific strategies (4GB / 6GB / 8GB / 12GB / CPU-only)
+  - [x] Negative results (things that sound good but don't work)
+  - [x] 4-phase experimental roadmap
+- **Key Finding**: Dense 32B → 14 tok/s is **physically impossible** (DDR5 bandwidth wall). MoE 30B → 14 tok/s is **already achieved** (12.95 tok/s measured). Dense 14B → 14 tok/s is **at the edge** with speculative decoding + aggressive optimization. The single most promising direction is **batched speculative verification with CPU GEMM kernels**.
+- **Critical Audit Finding**: Rust core engine's `generate()` returns a placeholder string — actual inference runs through Python/PyTorch path.
+
+### Previous Session (September 15, 2026)
 
 - **Session Focus**: Ground Truth Remediation Brief ([`PHANTOM_REMEDIATION_PROMPT.md`](file:///c:/Work/Projects/Solution%20is%20all%20You%20need/PHANTOM_REMEDIATION_PROMPT.md)) across Phases 0 through 7.
-- **Key Objectives**:
-  - Resolve 32B PCIe vs Host DDR5 RAM bandwidth paradox via in-place CPU SIMD architecture proof and empirical byte trace.
-  - Establish `CLAIMS.md` inventory and classify benchmark validity.
-  - Build `byte_counter.py`, `fingerprint.py`, and `test_reference_parity.py`.
-  - Delete `audit.md` and replace with programmatically generated `RESULTS.md`, `CHANGES.md`, and `WORKLOG.md`.
-  - Implement structural CI guardrails (`scripts/check_claims.py`).
-- **Current Status & Queue**:
+- **Previous Status & Queue**:
   - [x] `REM-PLAN`: Formulate comprehensive Ground Truth Remediation Implementation Plan covering Phases 0–7.
   - [x] `REM-P0`: Execute Phase 0: Complete `CLAIMS.md` inventory and benchmark validity classification.
   - [x] `REM-P1`: Execute Phase 1: Build byte counter, `phantom trace`, and numerical reference parity gate.

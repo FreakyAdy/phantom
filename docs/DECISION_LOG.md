@@ -177,3 +177,22 @@ This document catalogs critical architectural decisions, engineering trade-offs,
 * **Consequences**:
   - Positive: Eliminates marketing hype and aligns user expectations with physical reality; establishes impenetrable technical credibility; focuses roadmap on high-speed interactive techniques.
   - Negative: Shifts 70B from an active interactive target to an offline/background research milestone.
+
+---
+
+### ADR-014: Speculative Decoding with Batched CPU GEMM Verification as Primary Acceleration Strategy
+* **Context**: Deep research investigation (2026-09-17) into whether PHANTOM can transform 5 tok/s into 14 tok/s on the same low-end consumer hardware (RTX 4050 6GB + 24GB DDR5). Comprehensive audit of PHANTOM codebase, physical bandwidth ceiling analysis, roofline modeling, and survey of 30+ optimization techniques.
+* **Key Findings**:
+  1. **Dense 32B → 14 tok/s is physically impossible**: DDR5 dual-channel at ~48 GB/s reading 14 GB of RAM-resident weights bounds single-token decode to ~3.4 tok/s theoretical maximum. No software optimization changes this.
+  2. **Roofline analysis**: Single-token decode operates at arithmetic intensity 0.0036 FLOPs/byte — 7,800× below the GPU compute ceiling. The workload is catastrophically memory-bandwidth-bound.
+  3. **Critical opportunity**: Speculative decoding with batch-8 verification reads weights ONCE from DDR5 but verifies 8 tokens simultaneously. If CPU GEMM(8×5120, 5120×27648) ≈ GEMV(1×5120, 5120×27648) in wall-clock time, this amortizes the bandwidth cost by ~5.7× (at α=0.7 acceptance rate).
+  4. **Rust core engine gap**: The `PhantomEngine::generate()` function returns a placeholder string. All actual inference runs through the Python/PyTorch path. Custom CUDA kernels exist but are not wired into the runtime.
+* **Decision**:
+  1. **Adopt batched speculative verification** as the highest-priority engineering target (Milestone 1.6).
+  2. **Replace CPU GEMV kernels with CPU GEMM kernels** that can efficiently handle batch=8 evaluation of RAM-resident Q4 layers during speculative verification.
+  3. **Integrate a 0.5B draft model** (e.g., Qwen2.5-0.5B, ~0.3 GB) in GPU VRAM alongside the target model's GPU layers.
+  4. **Evaluate llama.cpp backend integration** as an alternative to building custom speculative decoding from scratch.
+  5. **Reframe the 14 tok/s target** to apply to Dense 14B and MoE 30B models (achievable) rather than Dense 32B (physically impossible).
+* **Consequences**:
+  - Positive: Most promising path to 2–3× throughput improvement on dense models; validates PHANTOM's unique CPU/GPU hybrid architecture advantage; if GEMM amortization works, Dense 32B could reach 5–8 tok/s.
+  - Negative: Requires significant implementation effort (CPU GEMM kernels, draft model management, tree attention, KV cache handling); uncertain whether small-batch CPU GEMM achieves full amortization on the reference hardware.

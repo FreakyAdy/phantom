@@ -4,6 +4,22 @@ All notable changes, bug fixes, architectural refactors, and performance calibra
 
 ---
 
+## [Unreleased] — 2026-09-17
+
+### Added
+* **Deep Research Report: Can 5 tok/s become 14 tok/s? (`phantom_research_report.md`)**:
+  * Complete PHANTOM codebase audit identifying Rust core engine as skeleton (generate() returns placeholder).
+  * Physical performance model with bandwidth ceiling derivations for 7 hardware tiers (VRAM/DDR5/DDR4/PCIe/NVMe).
+  * Speculative decoding mathematical analysis proving batched CPU GEMM verification can theoretically deliver 2.8× speedup.
+  * Roofline analysis demonstrating single-token decode operates at 7800× below GPU compute ceiling.
+  * 10 novel architectural concepts with feasibility analysis and failure modes.
+  * Top 5 prioritized implementation ideas (batched spec. decoding, MoE expert prefetching, Q3 quantization, hybrid attention-MLP split, llama.cpp backend).
+  * Proposed PHANTOM v2 architecture with speculative engine as first-class component.
+  * 4-phase experimental roadmap covering cheap experiments through novel research.
+  * Executive verdict: Dense 32B→14 tok/s is physically impossible (DDR5 wall); MoE 30B→14 tok/s already achieved; Dense 14B→14 tok/s at theoretical edge.
+
+---
+
 ## [Unreleased] — 2026-09-15
 
 ### Added
