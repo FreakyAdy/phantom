@@ -6,6 +6,9 @@ All notable changes, bug fixes, architectural refactors, and performance calibra
 
 ## [Unreleased] — 2026-09-18
 
+### Changed
+* **README.md overhaul**: Removed stale references to purged subsystems (Neural Cache, spectral/DCT quantization, old Wraith LSTM prototypes); added PHANTOM v2 MD Blueprint section, Colab Step 5 harness, v2 CLI flags, physics-honest targets, and updated achieved/in-progress status.
+
 ### Added
 * **PHANTOM v2 Google Colab test harness** (`scripts/colab_v2_runner.py`):
   * EAGLE-3 cloud training, live v2 speculative decode (`--live`), MoE prefetch correlation (`--moe-correlation`)

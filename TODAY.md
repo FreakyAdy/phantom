@@ -22,6 +22,7 @@
   - [x] Notebook Step 5 cells in `notebooks/phantom_cloud_tester.ipynb`
   - [x] `scripts/generate_results.py` merges `v2_latest.json` into `RESULTS.md` section 6
   - [x] Local dry-run PASS → `docs/testing/test_16_phantom_v2_colab.md`
+  - [x] README.md overhaul — v2 stack, Colab harness, removed stale subsystem references
 - **Current Focus / Next Queue**:
   - [ ] **Colab live run**: Open notebook Step 5 with `--live` on T4 (Qwen2.5-Coder-32B + EAGLE)
   - [ ] llama.cpp backend integration evaluation
