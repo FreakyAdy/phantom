@@ -1,0 +1,40 @@
+{
+  "timestamp": "2026-09-17T18:16:11Z",
+  "quick_mode": true,
+  "cpu_threads": 10,
+  "gemm_amortization": {
+    "batch_1": {
+      "gemv_total_ms": 10.477,
+      "gemm_total_ms": 10.425,
+      "amortization_factor": 1.0
+    },
+    "batch_4": {
+      "gemv_total_ms": 41.096,
+      "gemm_total_ms": 18.386,
+      "amortization_factor": 2.24
+    },
+    "batch_8": {
+      "gemv_total_ms": 82.374,
+      "gemm_total_ms": 19.533,
+      "amortization_factor": 4.22
+    }
+  },
+  "speculative_generation": {
+    "k_3": {
+      "tokens_per_second": 3428.4,
+      "acceptance_rate": 1.0,
+      "speedup_factor": 1190.42,
+      "bytes_per_token_mb": 3550.8,
+      "draft_time_sec": 0.001,
+      "verify_time_sec": 0.003
+    },
+    "k_5": {
+      "tokens_per_second": 3629.6,
+      "acceptance_rate": 0.812,
+      "speedup_factor": 1260.28,
+      "bytes_per_token_mb": 3550.8,
+      "draft_time_sec": 0.001,
+      "verify_time_sec": 0.003
+    }
+  }
+}

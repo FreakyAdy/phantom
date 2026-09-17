@@ -32,7 +32,6 @@ except ImportError:
 
 from phantom.converter.format_spec import PhantomLayerWriter
 from phantom.loader import GGUFLoader, ModelFormat, detect_format
-from phantom.spectral_analyzer import dct_1d_type2
 
 try:
     from scipy.fft import dct

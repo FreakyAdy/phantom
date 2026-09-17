@@ -25,8 +25,13 @@
   - [x] CI verification: Enforced 100% PASS on `scripts/check_claims.py` and `test_reference_parity.py --quick`.
   - [x] README.md comprehensive update: Integrated the deep research report standards, physical DDR5 bandwidth derivation (197 GB/s vs 48 GB/s), honest runtime status, and the batched speculative verification directive (Milestone 1.6 / ADR-014).
   - [x] Documentation alignment: Realigned `docs/OLLAMA_MIGRATION.md`, `docs/INNOVATIONS.md`, and `docs/PHANTOMFILE.md` to eliminate legacy 70B marketing, update examples to 32B/MoE, and classify experimental research prototypes per `reserch.md`.
+  - [x] Formulate Implementation Plan: Created comprehensive design document and purge specification (`implementation_plan.md`) pivoting PHANTOM exclusively to Heterogeneous Lossless Speculative Verification (GPU Draft + CPU/RAM Batched GEMM Verifier).
+  - [x] Phase 1 Purge: Permanently removed disconnected ML modules (`wraith_lstm.py`, `spectral_analyzer.py`, `neural_cache_ae.py`, `calibrate.py`, `calibration/`), unlinked skeletons (`core/`, `Cargo.toml`, `kernels/`, `python_api/`), and synthetic benchmarks (`tests/benchmarks/`).
+  - [x] Phase 2 Speculative Runtime: Built `python/phantom/speculative/` (`draft_runner.py`, `target_verifier.py`, `acceptance.py`, `kv_cache.py`, `engine.py`).
+  - [x] Phase 3 Physical Benchmarks & CLI: Built `benchmarks/speculative_benchmark.py` and wired into `phantom_cli.py` (measures 4.22x physical layer amortization on CPU AVX2).
+  - [x] Phase 4 Verification & Gates: Created `tests/unit/test_speculative_engine.py` (6/6 passing); ran `tests/audit_suite.py` (7/7 sections PASS, SHIP IT); verified `scripts/check_claims.py` (100% PASS).
 - **Key Finding**: Dense 32B → 14 tok/s is **physically impossible** (DDR5 bandwidth wall). MoE 30B → 14 tok/s is **already achieved** (12.95 tok/s measured). Dense 14B → 14 tok/s is **at the edge** with speculative decoding + aggressive optimization. The single most promising direction is **batched speculative verification with CPU GEMM kernels**.
-- **Critical Audit Finding**: Rust core engine's `generate()` returns a placeholder string — actual inference runs through Python/PyTorch path.
+- **Current Focus / Queue**: End-to-end model inference testing with live weights (e.g. Qwen2.5-Coder-32B target + Qwen2.5-0.5B draft in VRAM) and user demo.
 
 ### Previous Session (September 15, 2026)
 

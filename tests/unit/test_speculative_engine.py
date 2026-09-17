@@ -1,0 +1,178 @@
+"""
+PHANTOM SPECULATIVE — Unit & Correctness Test Suite
+===================================================
+Rigorous verification of the Heterogeneous Speculative Verification Subsystem:
+- Greedy lossless acceptance and correction logic
+- Speculative sampling distribution fidelity
+- KV cache commit and rollback invariants
+- End-to-end SpeculativeEngine generation and telemetry accounting
+"""
+
+from __future__ import annotations
+
+import pytest
+import torch
+import torch.nn.functional as F
+
+from phantom.speculative.acceptance import (
+    AcceptanceResult,
+    SpeculativeAcceptor,
+    greedy_verify,
+    speculative_sample_verify,
+)
+from phantom.speculative.draft_runner import DraftRunner
+from phantom.speculative.engine import SpeculativeEngine, SpeculativeMetrics
+from phantom.speculative.kv_cache import SpeculativeKVCache
+from phantom.speculative.target_verifier import TargetVerifier
+
+
+def test_greedy_verify_perfect_match():
+    """When all draft tokens match target argmax, emit all k + bonus token."""
+    vocab_size = 100
+    k = 4
+    draft_tokens = [10, 20, 30, 40]
+
+    # Construct target logits where argmax matches draft tokens
+    target_logits = torch.zeros(k + 1, vocab_size)
+    for i, tok in enumerate(draft_tokens):
+        target_logits[i, tok] = 10.0
+
+    # Bonus token at position k
+    bonus_token = 99
+    target_logits[k, bonus_token] = 10.0
+
+    res = greedy_verify(draft_tokens, target_logits)
+
+    assert res.num_accepted == k
+    assert res.accepted_tokens == draft_tokens
+    assert res.bonus_token == bonus_token
+    assert res.correction_token is None
+    assert res.divergence_index is None
+    assert res.emitted_tokens == [10, 20, 30, 40, 99]
+    assert res.acceptance_rate == 1.0
+
+
+def test_greedy_verify_partial_mismatch():
+    """When draft token at index 2 mismatches, accept 0..1, emit correction 2, discard 3."""
+    vocab_size = 100
+    k = 4
+    draft_tokens = [10, 20, 30, 40]
+
+    target_logits = torch.zeros(k + 1, vocab_size)
+    target_logits[0, 10] = 10.0  # Match
+    target_logits[1, 20] = 10.0  # Match
+    target_logits[2, 77] = 10.0  # Target wanted 77, not 30! Mismatch!
+    target_logits[3, 40] = 10.0
+
+    res = greedy_verify(draft_tokens, target_logits)
+
+    assert res.num_accepted == 2
+    assert res.accepted_tokens == [10, 20]
+    assert res.correction_token == 77
+    assert res.divergence_index == 2
+    assert res.bonus_token is None
+    assert res.emitted_tokens == [10, 20, 77]
+    assert res.acceptance_rate == 0.5
+
+
+def test_greedy_verify_immediate_mismatch():
+    """When the very first draft token mismatches, num_accepted is 0, emits correction."""
+    vocab_size = 100
+    k = 3
+    draft_tokens = [10, 20, 30]
+
+    target_logits = torch.zeros(k + 1, vocab_size)
+    target_logits[0, 99] = 10.0  # Immediate mismatch at index 0
+
+    res = greedy_verify(draft_tokens, target_logits)
+
+    assert res.num_accepted == 0
+    assert res.accepted_tokens == []
+    assert res.correction_token == 99
+    assert res.divergence_index == 0
+    assert res.emitted_tokens == [99]
+    assert res.acceptance_rate == 0.0
+
+
+def test_speculative_sample_verify_distribution():
+    """Verify that speculative sampling preserves the target distribution."""
+    torch.manual_seed(42)
+    vocab_size = 5
+
+    # Define distinct target and draft probability distributions
+    target_probs_vec = torch.tensor([0.1, 0.2, 0.4, 0.2, 0.1])
+    draft_probs_vec = torch.tensor([0.3, 0.3, 0.1, 0.1, 0.2])
+
+    target_logits = torch.log(target_probs_vec + 1e-8).unsqueeze(0).repeat(2, 1)
+    draft_probs = draft_probs_vec.unsqueeze(0)
+
+    counts = torch.zeros(vocab_size)
+    num_trials = 1000
+
+    for _ in range(num_trials):
+        # Sample draft token from draft distribution
+        draft_tok = int(torch.multinomial(draft_probs_vec, num_samples=1).item())
+        res = speculative_sample_verify(
+            draft_tokens=[draft_tok],
+            draft_probs=draft_probs,
+            target_logits=target_logits,
+            temperature=1.0,
+        )
+        # First emitted token is either the accepted draft token or target correction
+        first_token = res.emitted_tokens[0]
+        counts[first_token] += 1
+
+    empirical_dist = counts / counts.sum()
+    # Cosine similarity between empirical distribution and target distribution
+    cos_sim = F.cosine_similarity(empirical_dist.unsqueeze(0), target_probs_vec.unsqueeze(0)).item()
+    assert cos_sim > 0.98, f"Empirical dist {empirical_dist} deviated from target {target_probs_vec}"
+
+
+def test_speculative_kv_cache():
+    """Test speculative KV cache initialization, tracking, and truncation rollback."""
+    cache = SpeculativeKVCache()
+    cache.initialize(prefix_len=10)
+
+    assert cache.current_len == 10
+    cache.commit(num_new_tokens=4)
+    assert cache.current_len == 14
+
+    # Create dummy tuple KV cache: 2 layers, shape [1, 8, 14, 64]
+    k1 = torch.randn(1, 8, 14, 64)
+    v1 = torch.randn(1, 8, 14, 64)
+    k2 = torch.randn(1, 8, 14, 64)
+    v2 = torch.randn(1, 8, 14, 64)
+    cache.target_past_kv = ((k1, v1), (k2, v2))
+
+    # Rollback to length 12
+    cache.rollback(target_len=12)
+    assert cache.current_len == 12
+    assert cache.target_past_kv[0][0].shape == (1, 8, 12, 64)
+    assert cache.target_past_kv[0][1].shape == (1, 8, 12, 64)
+
+
+def test_speculative_engine_generate():
+    """End-to-end integration test of SpeculativeEngine generation."""
+    draft_runner = DraftRunner()
+    target_verifier = TargetVerifier()
+    engine = SpeculativeEngine(
+        draft_runner=draft_runner,
+        target_verifier=target_verifier,
+        spec_k=5,
+        temperature=0.0,
+    )
+
+    prompt = "Antigravity physics engine"
+    output_text, metrics = engine.generate(prompt=prompt, max_new_tokens=32, k=5)
+
+    assert isinstance(output_text, str)
+    assert len(output_text) > 0
+    assert metrics.total_tokens_generated == 32
+    assert metrics.total_draft_steps > 0
+    assert metrics.total_draft_tokens > 0
+    assert metrics.total_accepted_tokens > 0
+    assert metrics.mean_acceptance_rate > 0.0
+    assert metrics.tokens_per_second > 0.0
+    assert metrics.speedup_factor > 0.0
+    assert metrics.total_weight_bytes_read > 0
+    assert metrics.bytes_per_accepted_token_mb > 0.0

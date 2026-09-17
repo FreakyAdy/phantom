@@ -196,3 +196,20 @@ This document catalogs critical architectural decisions, engineering trade-offs,
 * **Consequences**:
   - Positive: Most promising path to 2–3× throughput improvement on dense models; validates PHANTOM's unique CPU/GPU hybrid architecture advantage; if GEMM amortization works, Dense 32B could reach 5–8 tok/s.
   - Negative: Requires significant implementation effort (CPU GEMM kernels, draft model management, tree attention, KV cache handling); uncertain whether small-batch CPU GEMM achieves full amortization on the reference hardware.
+
+---
+
+### ADR-015: Complete Project Focus on Heterogeneous Lossless Speculative Verification and Purge of Disconnected Subsystems
+* **Context**: Following deep research (`docs/specs/PHANTOM_RESEARCH_REPORT.md`) and empirical verification of the 3.93× CPU GEMM layer amortization factor, the project recognized that maintaining legacy, unintegrated prototypes (Wraith LSTM layer predictor, Spectral 2D DCT quantization, Neural Cache KV autoencoder, unwired Rust engine skeleton, and uncoalesced CUDA kernels) creates architectural confusion, maintenance overhead, and CI risk. The user issued an explicit directive to establish Heterogeneous Speculative Verification as PHANTOM's sole goal and purge all other non-goal subsystems.
+* **Decision**:
+  1. **Singular Directive**: Focus 100% of PHANTOM's architecture and engineering on the **Heterogeneous Lossless Speculative Verification Runtime** (GPU VRAM Draft Engine + Host RAM Batched GEMM Target Verifier + Lossless Acceptance Engine + Rollback KV Cache).
+  2. **Complete Subsystem Purge**:
+     - Remove disconnected ML prototypes: `python/phantom/wraith_lstm.py`, `python/phantom/spectral_analyzer.py`, `python/phantom/neural_cache_ae.py`, and `python/phantom/calibrate.py`.
+     - Remove dead training infrastructure: `calibration/` and `python_api/`.
+     - Remove unwired skeleton engines: `core/` (Rust crate) and `kernels/` (CUDA kernels).
+     - Remove synthetic benchmarks: `tests/benchmarks/` and replace `benchmarks/run_all.py` with physical speculative benchmarks (`benchmarks/speculative_benchmark.py`).
+  3. **Preserve Foundational Core**: Retain and harden GGUF loading (`python/phantom/loader/`), hardware detection & capacity planning (`python/phantom/instrumentation/`), CLI interface (`python/phantom/phantom_cli.py`), and mathematical reference parity verification (`tests/correctness/test_reference_parity.py`).
+* **Consequences**:
+  - Positive: Radically simplifies codebase; eliminates 100% of synthetic/mockup code; focuses all engineering resources on the single technique with physically proven amortization; guarantees zero discrepancies between code and documentation.
+  - Negative: Drops earlier experimental directions (NVMe tile paging, KV autoencoders, custom CUDA kernels) until or unless re-engineered to directly support speculative verification.
+

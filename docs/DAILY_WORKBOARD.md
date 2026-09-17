@@ -6,29 +6,21 @@
 
 ## 🎯 Active Session Workboard: Today
 
-- **Session Date**: September 15, 2026
-- **Session Objective**: Ground Truth Remediation Brief ([`PHANTOM_REMEDIATION_PROMPT.md`](file:///c:/Work/Projects/Solution%20is%20all%20You%20need/PHANTOM_REMEDIATION_PROMPT.md)) across Phases 0 through 7.
+- **Session Date**: September 17, 2026
+- **Session Objective**: Deep Research Investigation & Speculative Runtime Pivot ([`docs/specs/PHANTOM_RESEARCH_REPORT.md`](file:///c:/Work/Projects/Solution%20is%20all%20You%20need/docs/specs/PHANTOM_RESEARCH_REPORT.md) & [`docs/specs/PHANTOM_RESEARCH_SPEC.md`](file:///c:/Work/Projects/Solution%20is%20all%20You%20need/docs/specs/PHANTOM_RESEARCH_SPEC.md)).
 - **Hardware Profile**: NVIDIA GeForce RTX 4050 Laptop GPU (6 GB VRAM) | 24 GB DDR5 System RAM | Zero Local Model Storage Policy.
 
 ### 📋 Today's Action Checklist
 
 | Status | Task ID | Domain | Description | Artifact / Target |
 |:---:|:---:|:---:|:---|:---|
-| ✅ | `REM-PLAN` | Planning | Create Master Ground Truth Remediation Implementation Plan covering Phases 0–7 | [`implementation_plan.md`](file:///c:/Work/Projects/Solution%20is%20all%20You%20need/implementation_plan.md) |
-| ✅ | `REM-P0` | Inventory | Extract all quantitative claims to `CLAIMS.md` & classify benchmark validity | [`CLAIMS.md`](file:///c:/Work/Projects/Solution%20is%20all%20You%20need/CLAIMS.md) |
-| ✅ | `REM-P1` | Ground Truth | Implement `byte_counter.py`, `phantom trace`, and `test_reference_parity.py` | `python/phantom/instrumentation/` |
-| ✅ | `REM-P2` | Benchmarks | Rebuild benchmark suite (real weights, N>=10, ablations, `latest.json`) | `benchmarks/` |
-| ✅ | `REM-P3` | Reconciliation| Delete `audit.md`, generate `RESULTS.md`, `CHANGES.md`, and log `WORKLOG.md` | Root ledgers |
-| ✅ | `REM-P4` | Runtime Fixes | Model bandwidth wall in `phantom plan` and establish supported envelope | `python/phantom/` |
-| ✅ | `REM-P5` | Documentation | Rewrite `README.md` (honest prose), `ARCHITECTURE.md` (10-sections), `AGENTS.md` | `README.md` & `docs/` |
-| ✅ | `REM-P6` | CI Guardrails | Build `scripts/check_claims.py` & automated CI parity gates (100% PASS) | `scripts/check_claims.py` |
-| ✅ | `REM-P7` | Hygiene | Verify install scripts, author name, clean root, and write `REPRODUCING.md` | `docs/REPRODUCING.md` |
-| ✅ | `DOC-VER` | Verification | Extensively verify baseline requirements & refine README hardware matrix | `README.md` & docs |
-| ✅ | `TEST-10M` | Testing | Multi-hardware zero-disk evaluation across 10 frontier models >= 30B | `docs/testing/` |
-| ✅ | `OPT-70B-NVME`| Kernel / I/O | Frontier 70B NVMe Throughput Acceleration (AsyncTilePagingEngine & Fused SwiGLU) | `python/phantom/` & `kernels/` |
-| ✅ | `OPT-NIAH-32K` | Evaluation | Long-Context Needle-In-A-Haystack (4K–32K, 100% recall, 8.0x KV compression) | `tests/correctness/` & `benchmarks/` |
-| ✅ | `COLAB-PKG` | Cloud Testbed | Automated 1-Click Cloud Testbed & Colab Packaging (dual-mode, auto-report, purge) | `scripts/colab_runner.py` & `notebooks/` |
-| ✅ | `README-REALIGN` | Messaging / Realignment | Realistic README pitch, baseline multipliers (4.88x lift), and 70B deprioritization (ADR-013) | `README.md` & `docs/` |
+| ✅ | `RES-DEEP` | Research | Deep research into physical memory bandwidth walls (197 GB/s vs 48 GB/s) and speculative decoding mathematical proof | [`docs/specs/PHANTOM_RESEARCH_REPORT.md`](file:///c:/Work/Projects/Solution%20is%20all%20You%20need/docs/specs/PHANTOM_RESEARCH_REPORT.md) |
+| ✅ | `RES-EXP1` | Benchmark | Empirical AVX2 CPU GEMM(8) vs GEMV benchmark: proved 3.93× layer amortization factor | `scratch/bench_gemm_vs_gemv.py` |
+| ✅ | `HYG-CLEAN`| Hygiene | Relocate root markdown specs to `docs/specs/` and purge accidental directories | `docs/specs/` |
+| ✅ | `DOC-ALIGN`| Truthfulness | Demote synthetic benchmark claims across `benchmarks/run_all.py`, `README.md`, `PROGRESS.md`, and docs | `README.md` & `docs/` |
+| ✅ | `PURGE-DEAD`| Refactoring | Execute Phase 1: Purge dead/synthetic subsystems (`wraith_lstm`, `spectral`, `neural_cache`, `core/`, `kernels/`) | Cleaned repo root & subpackages |
+| ✅ | `SPEC-CORE` | Runtime | Execute Phase 2: Build `python/phantom/speculative/` runtime (`draft_runner`, `target_verifier`, `acceptance`, `engine`) | `python/phantom/speculative/` |
+| ✅ | `SPEC-BENCH`| Benchmarks | Execute Phase 3: Build real speculative physical benchmarks with byte accounting | `benchmarks/speculative_benchmark.py` |
 
 
 ---

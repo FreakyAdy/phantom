@@ -19,6 +19,9 @@ All notable changes, bug fixes, architectural refactors, and performance calibra
 * **Phase 1 Benchmark Validation (`scratch/bench_gemm_vs_gemv.py`)**:
   * Benchmarked single-layer GEMV(1) (11.37 ms), 8× sequential GEMV (92.03 ms), and batch-8 GEMM (23.40 ms) on reference Intel CPU AVX2.
   * Verified 3.93× layer amortization factor for batched speculative verification over sequential token decodes.
+* **Master Implementation Plan Formulation (`implementation_plan.md`)**:
+  * Created complete architectural blueprint and purge plan focusing PHANTOM 100% on the Heterogeneous Lossless Speculative Verification Runtime (GPU Draft + CPU/RAM Batched GEMM Target Verifier).
+  * Outlined Phase 1 (purge of disconnected modules: `wraith_lstm`, `spectral_analyzer`, `neural_cache_ae`, `calibrate`, `calibration/`, `python_api/`, `core/`, `kernels/`, synthetic benchmarks), Phase 2 (construction of `python/phantom/speculative/`), Phase 3 (CLI & real physical benchmark integration), and Phase 4 (parity & correctness gates).
 
 ### Changed
 * **Repository Organization**: Relocated `reserch.md` to [`docs/specs/PHANTOM_RESEARCH_SPEC.md`](file:///c:/Work/Projects/Solution%20is%20all%20You%20need/docs/specs/PHANTOM_RESEARCH_SPEC.md), `phantom_research_report.md` to [`docs/specs/PHANTOM_RESEARCH_REPORT.md`](file:///c:/Work/Projects/Solution%20is%20all%20You%20need/docs/specs/PHANTOM_RESEARCH_REPORT.md), and `PHANTOM_REMEDIATION_PROMPT.md` to [`docs/specs/PHANTOM_REMEDIATION_PROMPT.md`](file:///c:/Work/Projects/Solution%20is%20all%20You%20need/docs/specs/PHANTOM_REMEDIATION_PROMPT.md) to maintain root cleanliness per `AGENTS.md`.
