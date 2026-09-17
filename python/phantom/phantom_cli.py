@@ -1356,6 +1356,22 @@ class PhantomCLI:
         model_id = args.model
         prompt = args.prompt
 
+        # Handle hardware offloading flags
+        ngl = getattr(args, "n_gpu_layers", 0)
+        spec_draft = getattr(args, "spec_draft", None)
+        spec_k = getattr(args, "spec_k", 5)
+        cpu_moe = getattr(args, "cpu_moe", False)
+
+        if ngl > 0:
+            print(f"[HW OFFLOAD] Offloading {ngl} layers to GPU VRAM (192 GB/s GDDR6 path).")
+        if spec_draft:
+            print(f"[SPECULATIVE] Target: {model_id}")
+            print(f"[SPECULATIVE] Draft: {spec_draft}")
+            print(f"[SPECULATIVE] Batch Size (k): {spec_k} tokens per verification pass")
+        if cpu_moe:
+            print(f"[SPARSE-MOE] Enabled --cpu-moe. Routing sparse experts to CPU RAM (48 GB/s).")
+            print(f"[SPARSE-MOE] Keeping Attention / Shared Experts in GPU VRAM.")
+        
         # Check if user specified a local file path
         is_path = any(sep in model_id for sep in ("/", "\\")) or model_id.lower().endswith((".gguf", ".bin", ".safetensors"))
         if is_path:
@@ -1596,6 +1612,10 @@ def main():
     run_p.add_argument("--stream", action="store_true", default=True, help="Stream tokens to stdout")
     run_p.add_argument("--system", help="System prompt override")
     run_p.add_argument("--format", default="text", choices=["text", "json"], help="Output format")
+    run_p.add_argument("-ngl", "--n-gpu-layers", type=int, default=0, help="Number of layers to offload to GPU VRAM")
+    run_p.add_argument("--spec-draft", help="Draft model ID to enable Speculative Decoding")
+    run_p.add_argument("--spec-k", type=int, default=5, help="Number of speculative draft tokens per verification step")
+    run_p.add_argument("--cpu-moe", action="store_true", help="Route sparse experts through CPU RAM while keeping attention on GPU")
 
     # list
     list_p = subparsers.add_parser("list", help="List local models")

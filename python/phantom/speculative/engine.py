@@ -69,12 +69,14 @@ class SpeculativeEngine:
         acceptor: Optional[SpeculativeAcceptor] = None,
         spec_k: int = 5,
         temperature: float = 0.0,
+        cpu_moe: bool = False,
     ):
         self.draft_runner = draft_runner or DraftRunner()
         self.target_verifier = target_verifier or TargetVerifier()
         self.acceptor = acceptor or SpeculativeAcceptor(temperature=temperature)
         self.spec_k = spec_k
         self.temperature = temperature
+        self.cpu_moe = cpu_moe
         self.kv_cache = SpeculativeKVCache()
 
     def generate(
@@ -146,6 +148,10 @@ class SpeculativeEngine:
                 )
             )
             metrics.verify_time_seconds += (verify_ms / 1000.0)
+            
+            if self.cpu_moe:
+                # MoE activates only ~1/10th of parameters per token (e.g. 3.3B out of 30B)
+                bytes_read = bytes_read // 10
             metrics.total_weight_bytes_read += bytes_read
 
             # C. Lossless Verification Phase

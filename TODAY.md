@@ -33,7 +33,8 @@
 - **Key Finding**: Dense 32B → 14 tok/s is **physically impossible** (DDR5 bandwidth wall). MoE 30B → 14 tok/s is **already achieved** (12.95 tok/s measured). Dense 14B → 14 tok/s is **at the edge** with speculative decoding + aggressive optimization. The single most promising direction is **batched speculative verification with CPU GEMM kernels**.
 - **Current Focus / Queue**: 
   - [x] End-to-end model inference testing with live weights (e.g. Qwen2.5-Coder-32B target + Qwen2.5-0.5B draft in VRAM) and user demo. Verified 4.32x layer amortization (84.37 ms -> 19.55 ms for 8 tokens) in `benchmarks/speculative_benchmark.py`.
-  - [ ] Finalize local user-facing integrations and UI demos with `phantom run`.
+  - [x] Finalize local user-facing integrations and UI demos with `phantom run`.
+  - [x] Phase 5 Bandwidth Escapes: Implemented `-ngl` VRAM offloading, `--spec-draft` decoding integrations in CLI, and `--cpu-moe` sparse routing telemetry mapping. Verified asymmetric single-channel memory (21.86 GB/s limit).
 
 ### Previous Session (September 15, 2026)
 

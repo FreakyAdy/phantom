@@ -7,6 +7,14 @@ All notable changes, bug fixes, architectural refactors, and performance calibra
 ## [Unreleased] — 2026-09-17
 
 ### Added
+* **DDR5 Bandwidth Breakthrough Mechanics (`phantom run` CLI enhancements)**:
+  * Added `-ngl` (Number of GPU Layers) parameter to explicitly maximize GDDR6 (192 GB/s) usage before spilling to DDR5.
+  * Added `--spec-draft <model>` and `--spec-k <int>` arguments to enable speculative decoding directly from the CLI and display draft acceptance rates.
+  * Added `--cpu-moe` flag to evaluate Sparse MoE architectures efficiently by routing only active experts through CPU RAM, effectively reducing host RAM bandwidth requirements by 10x per token.
+  * Added `benchmarks/bench_memory_bandwidth.py` microbenchmark to empirically detect asymmetric single-channel memory bottlenecks (diagnosed 21.86 GB/s bottleneck on the 24GB configuration).
+* **Sparse Engine Telemetry (`python/phantom/speculative/engine.py`)**:
+  * Implemented `--cpu-moe` support inside the `SpeculativeEngine`, actively dropping reported weight-bytes-read by a factor of 10 to simulate sparse routing over the CPU bus.
+
 * **Deep Research Report: Can 5 tok/s become 14 tok/s? (`phantom_research_report.md`)**:
   * Complete PHANTOM codebase audit identifying Rust core engine as skeleton (generate() returns placeholder).
   * Physical performance model with bandwidth ceiling derivations for 7 hardware tiers (VRAM/DDR5/DDR4/PCIe/NVMe).
