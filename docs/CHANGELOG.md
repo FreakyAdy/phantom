@@ -7,6 +7,12 @@ All notable changes, bug fixes, architectural refactors, and performance calibra
 ## [Unreleased] — 2026-09-18
 
 ### Added
+* **PHANTOM v2 Google Colab test harness** (`scripts/colab_v2_runner.py`):
+  * EAGLE-3 cloud training, live v2 speculative decode (`--live`), MoE prefetch correlation (`--moe-correlation`)
+  * Merges results into `benchmarks/results/v2_latest.json`; exports `docs/testing/test_16_phantom_v2_colab.md`
+* **MoE expert routing / Wraith prefetch correlation** (`python/phantom/prefetch/moe_correlation.py`, `tests/unit/test_moe_correlation.py`)
+* **Colab notebook v2 cells** (`notebooks/phantom_cloud_tester.ipynb` Step 5)
+* **v2 section in RESULTS.md** via `scripts/generate_results.py` ingestion of `v2_latest.json`
 * **PHANTOM v2 MD Blueprint Stack (ADR-016)**:
   * EAGLE-3 feature-fusion heads (`python/phantom/speculative/eagle_heads.py`, `eagle_train.py`)
   * Wraith v2 adaptive prefetch scheduler (`python/phantom/prefetch/wraith_v2.py`)

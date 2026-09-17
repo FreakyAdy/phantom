@@ -30,6 +30,8 @@
 | ✅ | `V2-CLI` | Integration | Live model loader + v2 CLI flags | `model_loader.py`, `phantom_cli.py` |
 | ✅ | `V2-BENCH` | Benchmarks | v2 ablation + cross-hardware suite | `benchmarks/phantom_v2_benchmark.py` |
 | ✅ | `V2-TEST` | Quality | 41 tests PASS + parity gates | `tests/unit/test_eagle_heads.py`, etc. |
+| ✅ | `V2-COLAB` | Cloud | Colab v2 harness + MoE correlation + notebook Step 5 | `scripts/colab_v2_runner.py`, `test_16` |
+| ⬜ | `V2-COLAB-LIVE` | Cloud | Live-weight Colab run on T4 (`--live` in notebook Step 5) | Pending user Colab session |
 
 
 ---
@@ -82,10 +84,10 @@ flowchart LR
 
 When starting the next session, here is our queued roadmap:
 
-- [ ] **Live-weight E2E v2 benchmark**: Run `phantom run qwen2.5-coder-32b --spec-mode eagle` with ephemeral runner + trained EAGLE checkpoint on RTX 4050.
-- [ ] **Wire `--v2` into `phantom benchmark`**: Route to `benchmarks/phantom_v2_benchmark.py` and merge `v2_latest.json` into `generate_results.py`.
-- [ ] **MoE expert routing prefetch**: Correlate Wraith v2 predictions with MoE expert activation patterns on Qwen3-30B-A3B.
-- [ ] **Restore full PHANTOM_Research_Analysis.md body**: Expand root pointer stub with full archived content under `docs/specs/` if needed for reference.
+- [ ] **Colab live v2 run**: Open [`notebooks/phantom_cloud_tester.ipynb`](notebooks/phantom_cloud_tester.ipynb) Step 5, select **Live Cloud Inference**, run on T4 with `--live`.
+- [ ] **Live-weight E2E v2 on RTX 4050**: `phantom run qwen2.5-coder-32b --spec-mode eagle -ngl 14` with ephemeral runner + EAGLE checkpoint.
+- [ ] **Evaluate llama.cpp backend integration** for GGUF decode path.
+- [ ] **Restore full PHANTOM_Research_Analysis.md body** under `docs/specs/` if needed for reference.
 
 ---
 
@@ -111,3 +113,4 @@ When starting the next session, here is our queued roadmap:
 | **2026-09-14** | Audit & Verification | Eliminated all mock files; executed real non-synthetic test of Qwen2.5-Coder-32B; proved 4.88× parameter ceiling lift (6GB VRAM); verified pure-CPU SIMD fallback; implemented zero-disk ephemeral streaming harness. |
 | **2026-09-15** | Repository Structure | Restructured documentation system: established Concept Map, Progress Dashboard, Changelog, ADR Decision Log, auto-updating Testing Ledger, and Daily Workboard. |
 | **2026-09-15** | Ground Truth Remediation | Completed PHANTOM Ground Truth Remediation Brief across Phases 0–7: solved 32B PCIe paradox (10 KB activation copy + in-place DDR5 SIMD), built atomic byte counter & hardware fingerprinting, rewrote benchmark suite (N>=10, ablations, `latest.json`), deleted `audit.md`, generated canonical `RESULTS.md`, updated `README.md` & `ARCHITECTURE.md`, enforced 100% PASS `scripts/check_claims.py` CI gate, authored `REPRODUCING.md`, `CONTRIBUTING.md`, `SECURITY.md`. |
+| **2026-09-18** | v2 Colab Harness | Built `scripts/colab_v2_runner.py`, MoE prefetch correlation module, notebook Step 5, merged v2 into `RESULTS.md`; dry-run PASS (`test_16`). |

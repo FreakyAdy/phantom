@@ -16,7 +16,12 @@
   - [x] Live integration: `model_loader.py`, CLI v2 flags, refactored `SpeculativeEngine`
   - [x] Benchmarks: `benchmarks/phantom_v2_benchmark.py` → `benchmarks/results/v2_latest.json`
   - [x] Tests: 41/41 PASS (unit + parity); reference parity PASS; claims gate updated
+- **Colab v2 Harness (continued session)**:
+  - [x] `scripts/colab_v2_runner.py` — EAGLE train + MoE correlation + v2 ablation + report export
+  - [x] `python/phantom/prefetch/moe_correlation.py` + `tests/unit/test_moe_correlation.py`
+  - [x] Notebook Step 5 cells in `notebooks/phantom_cloud_tester.ipynb`
+  - [x] `scripts/generate_results.py` merges `v2_latest.json` into `RESULTS.md` section 6
+  - [x] Local dry-run PASS → `docs/testing/test_16_phantom_v2_colab.md`
 - **Current Focus / Next Queue**:
-  - [ ] Live-weight E2E on Qwen2.5-Coder-32B + trained EAGLE checkpoint (ephemeral runner)
-  - [ ] MoE expert routing prefetch correlation analysis
+  - [ ] **Colab live run**: Open notebook Step 5 with `--live` on T4 (Qwen2.5-Coder-32B + EAGLE)
   - [ ] llama.cpp backend integration evaluation

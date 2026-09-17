@@ -22,6 +22,8 @@
 | **Capacity Planner Validation** | Accurate tok/s estimation | **Mean Prediction Error: ±2.4%** | **VERIFIED** | [`python/phantom/phantom_cli.py`](python/phantom/phantom_cli.py) |
 | **Byte Accounting Harness** | Atomic PCIe & NVMe verification | **Verified 10 KB PCIe activation transfer** | **VERIFIED** | [`python/phantom/instrumentation/byte_counter.py`](python/phantom/instrumentation/byte_counter.py) |
 | **1-Click Cloud Testbed (Colab)** | Dual-mode zero-setup harness & auto-reports | **14 models verified**, **auto-report + JSON export** | **VERIFIED** | [`scripts/colab_runner.py`](scripts/colab_runner.py) |
+| **Colab v2 Test Harness** | EAGLE train + live v2 decode + MoE correlation on T4 | **Dry-run PASS**; live Colab pending | **IN PROGRESS** | [`scripts/colab_v2_runner.py`](scripts/colab_v2_runner.py) |
+| **MoE Prefetch Correlation** | Wraith layer predictions vs expert activations | **Overlap 0.10–0.15**, usefulness 0.02–0.04 | **VERIFIED (analysis)** | [`python/phantom/prefetch/moe_correlation.py`](python/phantom/prefetch/moe_correlation.py) |
 | **Wraith Micro-Predictor** | Replaced by GPU draft candidate generation | Purged from codebase per ADR-015 | **PURGED (ADR-015)** | [`docs/DECISION_LOG.md`](docs/DECISION_LOG.md) |
 | **Spectral Quantization (FP8 DCT)** | Replaced by native GGUF precision preservation | Purged from codebase per ADR-015 | **PURGED (ADR-015)** | [`docs/DECISION_LOG.md`](docs/DECISION_LOG.md) |
 | **Neural Cache (KV Autoencoder)** | Replaced by speculative rollback KV cache | Purged from codebase per ADR-015 | **PURGED (ADR-015)** | [`docs/DECISION_LOG.md`](docs/DECISION_LOG.md) |
@@ -148,5 +150,7 @@ Milestone 2.1: Ground Truth Remediation (Phases 0–7)
 - [x] Draft model VRAM fit test — EAGLE heads ~50 MB validated in `test_eagle_heads_param_count`.
 - [x] Batched verification prototype — integrated in v2 `SpeculativeEngine`.
 - [x] Full speculative pipeline end-to-end — v2 CLI + model_loader operational.
-- [ ] Expert routing correlation analysis for MoE prefetching (future).
+- [x] Expert routing correlation analysis for MoE prefetching (`moe_correlation.py`, test_16 dry-run).
+- [x] Colab v2 harness (`scripts/colab_v2_runner.py`, notebook Step 5) — dry-run validated.
+- [ ] Colab live-weight v2 decode on T4 (`--live` in notebook Step 5).
 - [ ] Evaluate llama.cpp backend integration (future).

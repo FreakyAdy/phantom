@@ -1,91 +1,4 @@
 {
-  "timestamp": "2026-09-17T19:04:22Z",
-  "quick_mode": true,
-  "cpu_threads": 10,
-  "subsystem_micro": {
-    "eagle_param_count": 3876744,
-    "eagle_memory_mb_fp16": 7.39,
-    "q3_traffic_reduction_pct": 33.3,
-    "sparsity_fraction": 0.4,
-    "fusion_calls": 1,
-    "prefetch_requests": 0
-  },
-  "ablation": {
-    "full_stack": {
-      "tokens_per_second": 88.92,
-      "acceptance_rate": 1.0,
-      "speedup_factor": 30.88,
-      "prefetch_hit_rate": 0.0,
-      "fusion_calls": 0,
-      "spec_mode": "eagle"
-    },
-    "no_prefetch": {
-      "tokens_per_second": 157.11,
-      "acceptance_rate": 1.0,
-      "speedup_factor": 54.55,
-      "prefetch_hit_rate": 0.0,
-      "fusion_calls": 0,
-      "spec_mode": "eagle"
-    },
-    "no_fusion": {
-      "tokens_per_second": 139.25,
-      "acceptance_rate": 1.0,
-      "speedup_factor": 48.35,
-      "prefetch_hit_rate": 0.0,
-      "fusion_calls": 0,
-      "spec_mode": "eagle"
-    },
-    "no_q3": {
-      "tokens_per_second": 157.47,
-      "acceptance_rate": 1.0,
-      "speedup_factor": 54.68,
-      "prefetch_hit_rate": 0.0,
-      "fusion_calls": 0,
-      "spec_mode": "eagle"
-    },
-    "no_sparsity": {
-      "tokens_per_second": 163.2,
-      "acceptance_rate": 1.0,
-      "speedup_factor": 56.67,
-      "prefetch_hit_rate": 0.0,
-      "fusion_calls": 0,
-      "spec_mode": "eagle"
-    },
-    "draft_only": {
-      "tokens_per_second": 3923.59,
-      "acceptance_rate": 1.0,
-      "speedup_factor": 1362.36,
-      "prefetch_hit_rate": 0.0,
-      "fusion_calls": 0,
-      "spec_mode": "draft"
-    }
-  },
-  "hardware_profiles": {
-    "rtx4050": {
-      "vram_gb": 6,
-      "baseline_tok_s": 2.88,
-      "projected_tok_s": 154.36,
-      "speedup_factor": 53.6,
-      "acceptance_rate": 1.0,
-      "meets_moe_14_target": true
-    },
-    "rtx3050": {
-      "vram_gb": 4,
-      "baseline_tok_s": 2.5,
-      "projected_tok_s": 131.34,
-      "speedup_factor": 52.54,
-      "acceptance_rate": 1.0,
-      "meets_moe_14_target": true
-    },
-    "rtx4060": {
-      "vram_gb": 8,
-      "baseline_tok_s": 3.2,
-      "projected_tok_s": 172.72,
-      "speedup_factor": 53.97,
-      "acceptance_rate": 1.0,
-      "meets_moe_14_target": true
-    }
-  },
   "timestamp_utc": "2026-09-17T19:09:37.297444+00:00",
   "colab_detected": false,
   "model_key": "qwen2.5-coder-32b",
@@ -207,6 +120,5 @@
         "meets_moe_14_target": true
       }
     }
-  },
-  "merged_at_utc": "2026-09-17T19:12:04.651745+00:00"
+  }
 }
