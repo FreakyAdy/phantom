@@ -22,6 +22,8 @@ from phantom.speculative.kv_cache import SpeculativeKVCache
 from phantom.speculative.draft_runner import DraftRunner
 from phantom.speculative.target_verifier import TargetVerifier
 from phantom.speculative.engine import SpeculativeEngine, SpeculativeMetrics
+from phantom.speculative.eagle_heads import EagleDrafter, EagleHeads
+from phantom.speculative.model_loader import SpeculativeRuntimeConfig, load_speculative_pair
 
 __all__ = [
     "AcceptanceResult",
@@ -33,4 +35,8 @@ __all__ = [
     "TargetVerifier",
     "SpeculativeEngine",
     "SpeculativeMetrics",
+    "EagleHeads",
+    "EagleDrafter",
+    "SpeculativeRuntimeConfig",
+    "load_speculative_pair",
 ]

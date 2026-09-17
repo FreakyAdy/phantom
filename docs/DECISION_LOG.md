@@ -213,3 +213,17 @@ This document catalogs critical architectural decisions, engineering trade-offs,
   - Positive: Radically simplifies codebase; eliminates 100% of synthetic/mockup code; focuses all engineering resources on the single technique with physically proven amortization; guarantees zero discrepancies between code and documentation.
   - Negative: Drops earlier experimental directions (NVMe tile paging, KV autoencoders, custom CUDA kernels) until or unless re-engineered to directly support speculative verification.
 
+---
+
+### ADR-016: Reinstatement of MD Blueprint Stack (EAGLE-3 + Kernel Fusion + Wraith Prefetch)
+* **Context**: User directive to follow the three root MD blueprint files (`PHANTOM_Research_Analysis.md`, `PHANTOM_Quick_Reference.md`, `PHANTOM_v2_Implementation_Blueprint.md`) as the primary engineering path toward 14+ tok/s on consumer hardware. ADR-015 had purged Wraith prefetch, custom kernels, and EAGLE-3 in favor of a minimal draft-model + CPU GEMM path.
+* **Decision**:
+  1. **Supersede ADR-015 purge scope** for v2 subsystems directly supporting the MD optimization stack.
+  2. **Reinstate and integrate** EAGLE-3 heads (`python/phantom/speculative/eagle_heads.py`), Triton/PyTorch fused kernels (`kernels/`), Wraith v2 prefetch (`python/phantom/prefetch/wraith_v2.py`), selective Q3 quantization (`python/phantom/quant/selective_q3.py`), and conservative adaptive sparsity (`python/phantom/sparsity/adaptive_gate.py`).
+  3. **Canonical spec** at `docs/specs/PHANTOM_V2_SPEC.md`; root MD files become pointers.
+  4. **Retain ADR-015 foundations**: GGUF loader, byte accounting, parity gates, zero-disk policy.
+  5. **Reframe 14 tok/s target** to MoE 30B and dense 14B tiers; dense 32B target is 7–10 tok/s (physics-honest).
+* **Consequences**:
+  - Positive: Multiplicative speedup stack (speculation × fusion × prefetch × quant × sparsity) pursues maximum achievable tok/s on consumer hardware.
+  - Negative: Reintroduces subsystem complexity; ~18–20 week implementation timeline; dense 32B → 14 tok/s remains physically impossible.
+

@@ -6,8 +6,8 @@
 
 ## 🎯 Active Session Workboard: Today
 
-- **Session Date**: September 17, 2026
-- **Session Objective**: Deep Research Investigation & Speculative Runtime Pivot ([`docs/specs/PHANTOM_RESEARCH_REPORT.md`](file:///c:/Work/Projects/Solution%20is%20all%20You%20need/docs/specs/PHANTOM_RESEARCH_REPORT.md) & [`docs/specs/PHANTOM_RESEARCH_SPEC.md`](file:///c:/Work/Projects/Solution%20is%20all%20You%20need/docs/specs/PHANTOM_RESEARCH_SPEC.md)).
+- **Session Date**: September 18, 2026
+- **Session Objective**: PHANTOM v2 MD Blueprint full implementation ([`docs/specs/PHANTOM_V2_SPEC.md`](docs/specs/PHANTOM_V2_SPEC.md), ADR-016).
 - **Hardware Profile**: NVIDIA GeForce RTX 4050 Laptop GPU (6 GB VRAM) | 24 GB DDR5 System RAM | Zero Local Model Storage Policy.
 
 ### 📋 Today's Action Checklist
@@ -22,6 +22,14 @@
 | ✅ | `SPEC-CORE` | Runtime | Execute Phase 2: Build `python/phantom/speculative/` runtime (`draft_runner`, `target_verifier`, `acceptance`, `engine`) | `python/phantom/speculative/` |
 | ✅ | `SPEC-BENCH`| Benchmarks | Execute Phase 3: Build real speculative physical benchmarks with byte accounting | `benchmarks/speculative_benchmark.py` |
 | ✅ | `SPEC-OFFLOAD`| Runtime & CLI | Implement `-ngl`, `--spec-draft`, and `--cpu-moe` hardware offloading with memory bandwidth microbenchmark | `phantom_cli.py`, `benchmarks/bench_memory_bandwidth.py` |
+| ✅ | `V2-SPEC` | Docs | Canonical v2 spec + ADR-016; root MD pointers | `docs/specs/PHANTOM_V2_SPEC.md` |
+| ✅ | `V2-EAGLE` | Runtime | EAGLE-3 heads + training pipeline | `python/phantom/speculative/eagle_heads.py` |
+| ✅ | `V2-KERNEL` | Kernels | Fused attention + FFN + dispatch layer | `kernels/`, `python/phantom/kernels/` |
+| ✅ | `V2-WRAITH` | Prefetch | Wraith v2 adaptive prefetch scheduler | `python/phantom/prefetch/wraith_v2.py` |
+| ✅ | `V2-QUANT` | Quant/Sparsity | Selective Q3 + 40% adaptive sparsity | `python/phantom/quant/`, `python/phantom/sparsity/` |
+| ✅ | `V2-CLI` | Integration | Live model loader + v2 CLI flags | `model_loader.py`, `phantom_cli.py` |
+| ✅ | `V2-BENCH` | Benchmarks | v2 ablation + cross-hardware suite | `benchmarks/phantom_v2_benchmark.py` |
+| ✅ | `V2-TEST` | Quality | 41 tests PASS + parity gates | `tests/unit/test_eagle_heads.py`, etc. |
 
 
 ---
@@ -74,12 +82,10 @@ flowchart LR
 
 When starting the next session, here is our queued roadmap:
 
-- [ ] **Configure Self-Hosted GPU Runner for Automated Nightly CI**:
-  Connect RTX 4050 runner to GitHub Actions with label `self-hosted-gpu` to execute nightly runs of `benchmarks/run_all.py` and commit fresh `latest.json` archives.
-- [ ] **Implement Linux Direct `io_uring` Kernel**:
-  Port `phantom_pages` NVMe tile loader from multi-threaded pread to Linux asynchronous `io_uring` SQE/CQE ring buffer for lower latency tile dispatch.
-- [ ] **Ultra-Long Multi-Needle Stress Testing (>64K Tokens)**:
-  Extend NIAH harness to 64K and 128K context tokens with multi-needle associative retrieval to characterize upper bounds of 8.0x Neural Cache capacity.
+- [ ] **Live-weight E2E v2 benchmark**: Run `phantom run qwen2.5-coder-32b --spec-mode eagle` with ephemeral runner + trained EAGLE checkpoint on RTX 4050.
+- [ ] **Wire `--v2` into `phantom benchmark`**: Route to `benchmarks/phantom_v2_benchmark.py` and merge `v2_latest.json` into `generate_results.py`.
+- [ ] **MoE expert routing prefetch**: Correlate Wraith v2 predictions with MoE expert activation patterns on Qwen3-30B-A3B.
+- [ ] **Restore full PHANTOM_Research_Analysis.md body**: Expand root pointer stub with full archived content under `docs/specs/` if needed for reference.
 
 ---
 

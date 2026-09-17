@@ -4,6 +4,25 @@ All notable changes, bug fixes, architectural refactors, and performance calibra
 
 ---
 
+## [Unreleased] — 2026-09-18
+
+### Added
+* **PHANTOM v2 MD Blueprint Stack (ADR-016)**:
+  * EAGLE-3 feature-fusion heads (`python/phantom/speculative/eagle_heads.py`, `eagle_train.py`)
+  * Wraith v2 adaptive prefetch scheduler (`python/phantom/prefetch/wraith_v2.py`)
+  * Triton/PyTorch fused kernels (`kernels/attention/fused_attention.py`, `kernels/ffn/fused_ffn.py`, `python/phantom/kernels/dispatch.py`)
+  * Selective Q3 MLP quantization (`python/phantom/quant/selective_q3.py`)
+  * Conservative 40% adaptive sparsity gates (`python/phantom/sparsity/adaptive_gate.py`)
+  * Live model loader (`python/phantom/speculative/model_loader.py`)
+  * v2 benchmark suite (`benchmarks/phantom_v2_benchmark.py` → `benchmarks/results/v2_latest.json`)
+  * Canonical spec (`docs/specs/PHANTOM_V2_SPEC.md`); root MD files converted to pointers
+* **PHANTOM v2 CLI flags** (`python/phantom/phantom_cli.py`): `--spec-mode`, `--eagle-heads`, `--no-prefetch`, `--no-fusion`, `--enable-q3`, `--enable-sparsity`, `phantom benchmark --v2`
+* **PHANTOM v2 test suite**: `tests/unit/test_eagle_heads.py`, `test_fused_kernels.py`, `test_wraith_prefetch.py`, `test_quant_sparsity.py`, `tests/correctness/test_speculative_parity.py`
+
+### Changed
+* **SpeculativeEngine v2** (`python/phantom/speculative/engine.py`): EAGLE-3 default mode, prefetch/fusion/Q3/sparsity telemetry
+* **ADR-016** appended to `docs/DECISION_LOG.md` superseding ADR-015 purge for v2 subsystems
+
 ## [Unreleased] — 2026-09-17
 
 ### Added

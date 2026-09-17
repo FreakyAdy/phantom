@@ -714,7 +714,11 @@ class PhantomCLI:
         elif cmd == "doctor":
             return self.cmd_doctor()
         elif cmd == "benchmark":
-            return self.cmd_benchmark(getattr(args, "model", "llama3:70b"), getattr(args, "all", False))
+            return self.cmd_benchmark(
+                getattr(args, "model", "llama3:70b"),
+                getattr(args, "all", False),
+                v2=getattr(args, "v2", False),
+            )
         elif cmd == "convert":
             return self.cmd_convert(args.input, args.output, getattr(args, "force", False))
         elif cmd == "update":
@@ -1356,18 +1360,35 @@ class PhantomCLI:
         model_id = args.model
         prompt = args.prompt
 
-        # Handle hardware offloading flags
+        # Handle hardware offloading and v2 speculative flags
         ngl = getattr(args, "n_gpu_layers", 0)
         spec_draft = getattr(args, "spec_draft", None)
         spec_k = getattr(args, "spec_k", 5)
         cpu_moe = getattr(args, "cpu_moe", False)
+        spec_mode = getattr(args, "spec_mode", None)
+        eagle_heads = getattr(args, "eagle_heads", None)
+        no_prefetch = getattr(args, "no_prefetch", False)
+        no_fusion = getattr(args, "no_fusion", False)
+        enable_q3 = getattr(args, "enable_q3", False)
+        enable_sparsity = getattr(args, "enable_sparsity", False)
+
+        v2_spec_enabled = spec_mode or spec_draft or eagle_heads or enable_q3 or enable_sparsity
+        if spec_mode is None and v2_spec_enabled:
+            spec_mode = "draft" if spec_draft else "eagle"
 
         if ngl > 0:
             print(f"[HW OFFLOAD] Offloading {ngl} layers to GPU VRAM (192 GB/s GDDR6 path).")
-        if spec_draft:
-            print(f"[SPECULATIVE] Target: {model_id}")
-            print(f"[SPECULATIVE] Draft: {spec_draft}")
-            print(f"[SPECULATIVE] Batch Size (k): {spec_k} tokens per verification pass")
+        if v2_spec_enabled:
+            print(f"[PHANTOM v2] Speculative mode: {spec_mode or 'eagle'}")
+            print(f"[PHANTOM v2] Batch size (k): {spec_k}")
+            if eagle_heads:
+                print(f"[PHANTOM v2] EAGLE heads: {eagle_heads}")
+            if spec_draft:
+                print(f"[PHANTOM v2] Draft model: {spec_draft}")
+            if no_prefetch:
+                print("[PHANTOM v2] Prefetch: DISABLED (ablation)")
+            if no_fusion:
+                print("[PHANTOM v2] Kernel fusion: DISABLED (ablation)")
         if cpu_moe:
             print(f"[SPARSE-MOE] Enabled --cpu-moe. Routing sparse experts to CPU RAM (48 GB/s).")
             print(f"[SPARSE-MOE] Keeping Attention / Shared Experts in GPU VRAM.")
@@ -1449,51 +1470,68 @@ class PhantomCLI:
             except Exception:
                 pass
 
-        # Speculative / Hardware Offload Execution Path
-        if spec_draft or cpu_moe:
-            print("\n[SPECULATIVE ENGINE] Initializing Heterogeneous Speculative Verification Runtime...")
+        # PHANTOM v2 Speculative Execution Path
+        if v2_spec_enabled or cpu_moe:
+            print("\n[PHANTOM v2] Initializing MD Blueprint Speculative Runtime...")
             try:
-                from phantom.speculative.draft_runner import DraftRunner
-                from phantom.speculative.target_verifier import TargetVerifier
-                from phantom.speculative.engine import SpeculativeEngine
-
-                target_layers = 64
-                actual_gpu_layers = min(ngl, target_layers)
-                actual_ram_layers = max(0, target_layers - actual_gpu_layers)
-
-                verifier = TargetVerifier(
-                    gpu_layers=actual_gpu_layers,
-                    ram_layers=actual_ram_layers,
-                    cpu_moe=cpu_moe,
+                from phantom.speculative.model_loader import (
+                    SpeculativeRuntimeConfig,
+                    load_speculative_pair,
                 )
-                runner = DraftRunner(model_name=spec_draft or "qwen2.5-0.5b")
-                engine = SpeculativeEngine(
-                    draft_runner=runner,
-                    target_verifier=verifier,
+
+                config = SpeculativeRuntimeConfig(
+                    model_id=model_id,
+                    spec_mode=spec_mode or "eagle",
                     spec_k=spec_k,
+                    n_gpu_layers=ngl or 14,
+                    eagle_heads_path=eagle_heads,
+                    draft_model_id=spec_draft,
+                    prefetch_enabled=not no_prefetch,
+                    fusion_enabled=not no_fusion,
+                    q3_enabled=enable_q3,
+                    sparsity_enabled=enable_sparsity,
                     cpu_moe=cpu_moe,
                 )
-                print(f"[SPECULATIVE ENGINE] Target: {model_id} ({actual_gpu_layers} layers in VRAM, {actual_ram_layers} layers in DDR5 RAM)")
-                if spec_draft:
-                    print(f"[SPECULATIVE ENGINE] Draft: {spec_draft} (100% resident in GPU VRAM)")
-                if cpu_moe:
-                    print(f"[SPECULATIVE ENGINE] Sparse MoE routing: 10x RAM bandwidth reduction active")
+
+                gguf_path = self._find_gguf_path(model_id)
+                if gguf_path is None and not (spec_draft or spec_mode):
+                    raise RuntimeError(f"Model '{model_id}' not found for live inference")
+
+                if gguf_path is not None:
+                    engine = load_speculative_pair(config, find_gguf_fn=self._find_gguf_path)
+                else:
+                    from phantom.speculative.draft_runner import DraftRunner
+                    from phantom.speculative.target_verifier import TargetVerifier
+                    from phantom.speculative.engine import SpeculativeEngine
+
+                    verifier = TargetVerifier(gpu_layers=min(ngl, 64), ram_layers=max(0, 64 - ngl), cpu_moe=cpu_moe)
+                    runner = DraftRunner(model_name=spec_draft or "qwen2.5-0.5b")
+                    engine = SpeculativeEngine(
+                        draft_runner=runner, target_verifier=verifier,
+                        spec_k=spec_k, cpu_moe=cpu_moe, spec_mode=spec_mode or "draft",
+                    )
+
+                print(f"[PHANTOM v2] Target: {model_id} ({config.n_gpu_layers} GPU layers)")
+                print(f"[PHANTOM v2] Mode: {config.spec_mode} | k={spec_k} | prefetch={config.prefetch_enabled} | fusion={config.fusion_enabled}")
 
                 text, metrics = engine.generate(prompt=prompt, max_new_tokens=32, k=spec_k)
                 print(f"\nResponse: {text}")
                 print("\n" + "=" * 62)
-                print("PHANTOM SPECULATIVE DECODING TELEMETRY")
+                print("PHANTOM v2 SPECULATIVE DECODING TELEMETRY")
                 print("=" * 62)
+                print(f"  Spec Mode:              {metrics.spec_mode}")
                 print(f"  Generated Tokens:       {metrics.total_tokens_generated}")
                 print(f"  Draft Acceptance Rate:  {metrics.mean_acceptance_rate * 100:.1f}%")
                 print(f"  Effective Throughput:   {metrics.tokens_per_second:.2f} tok/s (Baseline: {metrics.baseline_tok_per_sec:.2f} tok/s)")
                 print(f"  Effective Speedup:      {metrics.speedup_factor:.2f}x")
+                print(f"  Prefetch Hit Rate:      {metrics.prefetch_hit_rate * 100:.1f}%")
+                print(f"  Fusion Kernel Calls:    {metrics.fusion_calls}")
                 print(f"  RAM Weight Traffic:     {metrics.total_weight_bytes_read / (1024**3):.2f} GB")
                 print(f"  Memory Amortization:    {metrics.bytes_per_accepted_token_mb:.1f} MB / token")
                 print("=" * 62 + "\n")
                 return 0
             except Exception as e:
-                print(f"[SPECULATIVE ENGINE] Execution error: {e}")
+                print(f"[PHANTOM v2] Execution error: {e}")
 
         print(f"\n✗ Error: Model '{model_id}' weights could not be loaded for local execution.")
         print("  Please verify the model is installed with 'phantom list' or pulled via 'phantom pull'.\n")
@@ -1605,18 +1643,36 @@ class PhantomCLI:
         print("Memory Amortization:   ~3.93× DDR5 memory bandwidth amortization factor")
         print("Status:                Lossless Speculative Runtime Active (0.00% statistical drift)\n")
 
-    def cmd_benchmark(self, model: str = "llama3:70b", run_all: bool = False, quick: bool = True) -> int:
+    def cmd_benchmark(
+        self,
+        model: str = "llama3:70b",
+        run_all: bool = False,
+        quick: bool = True,
+        v2: bool = False,
+    ) -> int:
         print("\n" + "=" * 75)
-        print(f"  PHANTOM BENCHMARK SUITE — {model.upper()}")
+        suite = "PHANTOM v2 MD BLUEPRINT" if v2 else "PHANTOM BENCHMARK"
+        print(f"  {suite} — {model.upper()}")
         print("=" * 75)
-        print("Benchmarking Heterogeneous Speculative Verification on detected hardware...\n")
 
         try:
+            if v2:
+                from benchmarks.phantom_v2_benchmark import main as v2_main
+                import sys as _sys
+                _argv = ["phantom_v2_benchmark.py", "--quick"] if quick and not run_all else ["phantom_v2_benchmark.py"]
+                old_argv = _sys.argv
+                _sys.argv = _argv
+                try:
+                    return v2_main()
+                finally:
+                    _sys.argv = old_argv
+
             from benchmarks.speculative_benchmark import (
                 benchmark_cpu_gemm_amortization,
                 benchmark_speculative_end_to_end,
             )
 
+            print("Benchmarking Heterogeneous Speculative Verification on detected hardware...\n")
             batch_sizes = [1, 4, 8] if quick else [1, 2, 4, 8]
             benchmark_cpu_gemm_amortization(batch_sizes=batch_sizes, runs=2)
             benchmark_speculative_end_to_end(k_values=[3, 5], tokens_to_generate=16)
@@ -1659,8 +1715,14 @@ def build_parser() -> argparse.ArgumentParser:
     run_p.add_argument("--system", help="System prompt override")
     run_p.add_argument("--format", default="text", choices=["text", "json"], help="Output format")
     run_p.add_argument("-ngl", "--n-gpu-layers", type=int, default=0, help="Number of layers to offload to GPU VRAM")
-    run_p.add_argument("--spec-draft", help="Draft model ID to enable Speculative Decoding")
+    run_p.add_argument("--spec-mode", choices=["eagle", "draft"], help="Speculative mode: eagle (EAGLE-3 heads) or draft (separate draft model)")
+    run_p.add_argument("--spec-draft", help="Draft model ID (--spec-mode draft)")
+    run_p.add_argument("--eagle-heads", help="Path to trained EAGLE-3 heads checkpoint")
     run_p.add_argument("--spec-k", type=int, default=5, help="Number of speculative draft tokens per verification step")
+    run_p.add_argument("--no-prefetch", action="store_true", help="Disable Wraith v2 prefetch (ablation)")
+    run_p.add_argument("--no-fusion", action="store_true", help="Disable fused kernels (ablation)")
+    run_p.add_argument("--enable-q3", action="store_true", help="Enable selective Q3 MLP quantization")
+    run_p.add_argument("--enable-sparsity", action="store_true", help="Enable conservative 40%% adaptive sparsity")
     run_p.add_argument("--cpu-moe", action="store_true", help="Route sparse experts through CPU RAM while keeping attention on GPU")
 
     # list
@@ -1705,6 +1767,7 @@ def build_parser() -> argparse.ArgumentParser:
     bench_p = subparsers.add_parser("benchmark", help="Run PHANTOM core benchmark suite")
     bench_p.add_argument("model", nargs="?", default="llama3:70b", help="Model to benchmark (default: llama3:70b)")
     bench_p.add_argument("--all", action="store_true", help="Run exhaustive benchmark suite")
+    bench_p.add_argument("--v2", action="store_true", help="Run PHANTOM v2 MD Blueprint ablation benchmark suite")
 
     # convert
     conv_p = subparsers.add_parser("convert", help="Convert GGUF to PHANTOM format")

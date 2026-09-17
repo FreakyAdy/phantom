@@ -209,28 +209,35 @@ def test_speculative_engine_cpu_moe():
 
 
 def test_cli_argument_parsing():
-    """Verify CLI parser options for -ngl, --spec-draft, --spec-k, and --cpu-moe."""
+    """Verify CLI parser options for v2 speculative flags."""
     from phantom.phantom_cli import build_parser
 
     parser = build_parser()
 
-    # Defaults
     args = parser.parse_args(["run", "qwen2.5-32b"])
     assert args.n_gpu_layers == 0
     assert args.spec_draft is None
     assert args.spec_k == 5
     assert args.cpu_moe is False
+    assert args.spec_mode is None
+    assert args.no_prefetch is False
+    assert args.no_fusion is False
 
-    # Custom options
     args_custom = parser.parse_args([
         "run",
         "qwen2.5-32b",
         "-ngl", "16",
-        "--spec-draft", "qwen2.5-0.5b",
+        "--spec-mode", "eagle",
+        "--eagle-heads", "~/.phantom/eagle/test.pt",
         "--spec-k", "4",
+        "--no-prefetch",
+        "--enable-q3",
         "--cpu-moe",
     ])
     assert args_custom.n_gpu_layers == 16
-    assert args_custom.spec_draft == "qwen2.5-0.5b"
+    assert args_custom.spec_mode == "eagle"
+    assert args_custom.eagle_heads == "~/.phantom/eagle/test.pt"
     assert args_custom.spec_k == 4
+    assert args_custom.no_prefetch is True
+    assert args_custom.enable_q3 is True
     assert args_custom.cpu_moe is True
