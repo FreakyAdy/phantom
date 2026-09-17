@@ -54,6 +54,10 @@
 | `C-029` | "Single layer load from NVMe Gen4 in <= 50ms" | `docs/INNOVATIONS.md:21` | `latency` | <= 50 ms | Target claim | `UNVERIFIED` | **RESTATE** | Restated to 38.4 ± 3.1 ms for 64MB tiles in `RESULTS.md` |
 | `C-030` | "Skips >60% of inactive neurons during generation" | `docs/INNOVATIONS.md:25` | `compression` | > 60% skip | Target claim | `UNVERIFIED` | **RESTATE** | Restated as MoE sparse expert routing (8/128 experts active) |
 | `C-031` | "0.99997 cosine similarity (~0.42 PPL delta vs FP16)" | `audit.md:132` | `quality` | 0.99997 cos sim, 0.42 PPL | Synthetic DCT | `UNVERIFIED` | **RESTATE** | Measured in `benchmarks/run_all.py` (0.42 PPL delta on real test) |
+| `C-032` | "Wraith prefetch delivers +9.9% end-to-end throughput lift" | `docs/PROGRESS.md:13` | `throughput` | +9.97% lift | `benchmarks/run_all.py` | `CONTRADICTED` | **DEMOTE** | Reclassified as synthetic simulation. Fixed sequential layers do not benefit from transition prediction; prefetch cannot bypass DDR5 bandwidth walls. |
+| `C-033` | "Spectral Quantization 0.42 PPL delta on wikitext-2" | `docs/PROGRESS.md:14` | `quality` | 0.42 PPL | `benchmarks/run_all.py` | `UNVERIFIED` | **DEMOTE** | Reclassified as algorithmic matrix test; model-level PPL unverified on production weights. |
+| `C-034` | "Neural Cache preserves 100% retrieval recall up to 32K context" | `docs/PROGRESS.md:16` | `quality` | 100.0% recall | `test_needle_haystack.py` | `UNVERIFIED` | **DEMOTE** | Reclassified as experimental tensor prototype; production multi-turn retrieval unverified. |
+| `C-035` | "Rust Core Engine executes zero-copy tiered inference" | `core/src/engine/mod.rs` | `architecture` | Native inference | `core/` source | `CONTRADICTED` | **DEMOTE** | Engine `generate()` returns simulated string; live execution path runs via Python. |
 
 
 ---

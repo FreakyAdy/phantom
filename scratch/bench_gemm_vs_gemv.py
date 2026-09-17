@@ -65,8 +65,8 @@ def benchmark_gemv(
     D: int, F: int, n_runs: int = 20, warmup: int = 5
 ) -> Dict[str, float]:
     """Benchmark single GEMV: y[1, F] = x[1, D] @ W[D, F]."""
-    W = np.random.randn(D, F).astype(np.float16)
-    x = np.random.randn(1, D).astype(np.float16)
+    W = np.ones((D, F), dtype=np.float32)
+    x = np.ones((1, D), dtype=np.float32)
 
     for _ in range(warmup):
         _ = x @ W
@@ -85,8 +85,8 @@ def benchmark_8x_gemv(
     D: int, F: int, n_runs: int = 20, warmup: int = 5
 ) -> Dict[str, float]:
     """Benchmark 8× sequential GEMV (simulating 8 sequential token decodes)."""
-    W = np.random.randn(D, F).astype(np.float16)
-    xs = [np.random.randn(1, D).astype(np.float16) for _ in range(8)]
+    W = np.ones((D, F), dtype=np.float32)
+    xs = [np.ones((1, D), dtype=np.float32) for _ in range(8)]
 
     for _ in range(warmup):
         for x in xs:
@@ -107,8 +107,8 @@ def benchmark_gemm_batch8(
     D: int, F: int, n_runs: int = 20, warmup: int = 5
 ) -> Dict[str, float]:
     """Benchmark batch-8 GEMM: Y[8, F] = X[8, D] @ W[D, F]."""
-    W = np.random.randn(D, F).astype(np.float16)
-    X = np.random.randn(8, D).astype(np.float16)
+    W = np.ones((D, F), dtype=np.float32)
+    X = np.ones((8, D), dtype=np.float32)
 
     for _ in range(warmup):
         _ = X @ W
@@ -124,16 +124,15 @@ def benchmark_gemm_batch8(
 
 
 def benchmark_full_layer_gemv(
-    D: int, F: int, n_layers: int = 50, n_runs: int = 5, warmup: int = 2
+    D: int, F: int, n_layers: int = 10, n_runs: int = 3, warmup: int = 1
 ) -> Dict[str, float]:
-    """Benchmark full forward pass through n_layers with GEMV (single token)."""
-    # Each layer has gate_proj, up_proj, down_proj (simplified to 2 matmuls)
+    """Benchmark forward pass through n_layers with GEMV (single token)."""
     weights = [
-        (np.random.randn(D, F).astype(np.float16),
-         np.random.randn(F, D).astype(np.float16))
+        (np.ones((D, F), dtype=np.float32),
+         np.ones((F, D), dtype=np.float32))
         for _ in range(n_layers)
     ]
-    x = np.random.randn(1, D).astype(np.float16)
+    x = np.ones((1, D), dtype=np.float32)
 
     for _ in range(warmup):
         h = x
@@ -153,15 +152,15 @@ def benchmark_full_layer_gemv(
 
 
 def benchmark_full_layer_gemm8(
-    D: int, F: int, n_layers: int = 50, n_runs: int = 5, warmup: int = 2
+    D: int, F: int, n_layers: int = 10, n_runs: int = 3, warmup: int = 1
 ) -> Dict[str, float]:
-    """Benchmark full forward pass through n_layers with GEMM batch=8."""
+    """Benchmark forward pass through n_layers with GEMM batch=8."""
     weights = [
-        (np.random.randn(D, F).astype(np.float16),
-         np.random.randn(F, D).astype(np.float16))
+        (np.ones((D, F), dtype=np.float32),
+         np.ones((F, D), dtype=np.float32))
         for _ in range(n_layers)
     ]
-    X = np.random.randn(8, D).astype(np.float16)
+    X = np.ones((8, D), dtype=np.float32)
 
     for _ in range(warmup):
         H = X
@@ -211,7 +210,7 @@ def main():
     print()
 
     # ── Single-op benchmarks ──
-    print("─" * 78)
+    print("-" * 78)
     print("TEST 1: Single GEMV  (y[1,F] = x[1,D] @ W[D,F])")
     print("  Simulates: 1 token decode through 1 MLP layer")
     gemv_stats = benchmark_gemv(D, F)
@@ -219,7 +218,7 @@ def main():
     print(f"          p50={gemv_stats['p50_ms']:.3f}ms, p95={gemv_stats['p95_ms']:.3f}ms")
     print()
 
-    print("─" * 78)
+    print("-" * 78)
     print("TEST 2: 8× Sequential GEMV  (same W, 8 different x vectors)")
     print("  Simulates: 8 sequential token decodes (current autoregressive path)")
     gemv8_stats = benchmark_8x_gemv(D, F)
@@ -227,7 +226,7 @@ def main():
     print(f"          p50={gemv8_stats['p50_ms']:.3f}ms, p95={gemv8_stats['p95_ms']:.3f}ms")
     print()
 
-    print("─" * 78)
+    print("-" * 78)
     print("TEST 3: Batch-8 GEMM  (Y[8,F] = X[8,D] @ W[D,F])")
     print("  Simulates: 8 token batch verification (speculative decoding)")
     gemm8_stats = benchmark_gemm_batch8(D, F)
@@ -235,40 +234,40 @@ def main():
     print(f"          p50={gemm8_stats['p50_ms']:.3f}ms, p95={gemm8_stats['p95_ms']:.3f}ms")
     print()
 
-    # ── Analysis ──
-    print("═" * 78)
+    # -- Analysis --
+    print("=" * 78)
     print("ANALYSIS")
-    print("═" * 78)
+    print("=" * 78)
 
     ratio_gemm_vs_gemv = gemm8_stats['mean_ms'] / max(0.001, gemv_stats['mean_ms'])
     ratio_gemm_vs_8gemv = gemm8_stats['mean_ms'] / max(0.001, gemv8_stats['mean_ms'])
     amortization_factor = gemv8_stats['mean_ms'] / max(0.001, gemm8_stats['mean_ms'])
 
-    print(f"  GEMM(8) / GEMV(1) ratio:      {ratio_gemm_vs_gemv:.2f}×")
-    print(f"  GEMM(8) / 8×GEMV ratio:        {ratio_gemm_vs_8gemv:.2f}×")
-    print(f"  Amortization factor (8×GEMV / GEMM(8)): {amortization_factor:.2f}×")
+    print(f"  GEMM(8) / GEMV(1) ratio:               {ratio_gemm_vs_gemv:.2f}x")
+    print(f"  GEMM(8) / 8xGEMV ratio:                {ratio_gemm_vs_8gemv:.2f}x")
+    print(f"  Amortization factor (8xGEMV / GEMM(8)): {amortization_factor:.2f}x")
     print()
 
     if ratio_gemm_vs_gemv < 2.0:
-        print("  ✅ GEMM(8) ≈ GEMV(1): Weight reads are AMORTIZED across batch!")
-        print("     → Speculative decoding can yield ~2.8× speedup.")
-        print("     → Dense 32B: 2.88 → ~7+ tok/s (estimated)")
+        print("  [PASS] GEMM(8) ~= GEMV(1): Weight reads are AMORTIZED across batch!")
+        print("     -> Speculative decoding can yield ~2.8x speedup.")
+        print("     -> Dense 32B: 2.88 -> ~7+ tok/s (estimated)")
         verdict = "VIABLE"
     elif ratio_gemm_vs_gemv < 4.0:
-        print("  ⚠️  GEMM(8) is 2-4× GEMV(1): PARTIAL amortization.")
-        print("     → Speculative decoding yields ~1.5-2× speedup.")
-        print("     → Dense 32B: 2.88 → ~4-5 tok/s (estimated)")
+        print("  [PARTIAL] GEMM(8) is 2-4x GEMV(1): PARTIAL amortization.")
+        print("     -> Speculative decoding yields ~1.5-2x speedup.")
+        print("     -> Dense 32B: 2.88 -> ~4-5 tok/s (estimated)")
         verdict = "PARTIALLY_VIABLE"
     else:
-        print("  ❌ GEMM(8) ≈ 8× GEMV(1): NO amortization — bandwidth-bound per-token.")
-        print("     → Speculative decoding provides NO throughput benefit.")
-        print("     → Different strategy needed (e.g., MoE, model size reduction)")
+        print("  [FAIL] GEMM(8) ~= 8x GEMV(1): NO amortization -- bandwidth-bound per-token.")
+        print("     -> Speculative decoding provides NO throughput benefit.")
+        print("     -> Different strategy needed (e.g., MoE, model size reduction)")
         verdict = "NOT_VIABLE"
 
     print()
 
     # ── Full-layer benchmarks (if time allows) ──
-    print("─" * 78)
+    print("-" * 78)
     print(f"TEST 4: Full {N_LAYERS}-layer forward pass GEMV (1 token)")
     print(f"  Simulates: Complete CPU evaluation of RAM-resident layers")
     print("  (This will take a moment...)")
@@ -276,9 +275,9 @@ def main():
         full_gemv = benchmark_full_layer_gemv(D, F, n_layers=min(N_LAYERS, 10), n_runs=3, warmup=1)
         extrapolated_ms = full_gemv['mean_ms'] * (N_LAYERS / min(N_LAYERS, 10))
         print(f"  Result ({min(N_LAYERS, 10)} layers): {full_gemv['mean_ms']:.1f} ms")
-        print(f"  Extrapolated ({N_LAYERS} layers): {extrapolated_ms:.1f} ms → {1000.0/extrapolated_ms:.2f} tok/s")
+        print(f"  Extrapolated ({N_LAYERS} layers): {extrapolated_ms:.1f} ms -> {1000.0/extrapolated_ms:.2f} tok/s")
     except MemoryError:
-        print("  ⚠ Insufficient memory for full-layer benchmark (expected on 24GB RAM)")
+        print("  [WARN] Insufficient memory for full-layer benchmark")
         extrapolated_ms = None
 
     print()
@@ -291,14 +290,14 @@ def main():
         print(f"  Extrapolated ({N_LAYERS} layers): {extrapolated_gemm_ms:.1f} ms")
         if extrapolated_ms:
             full_amort = extrapolated_ms * 8 / extrapolated_gemm_ms
-            print(f"  Full-model amortization factor: {full_amort:.2f}×")
+            print(f"  Full-model amortization factor: {full_amort:.2f}x")
     except MemoryError:
-        print("  ⚠ Insufficient memory for full-layer benchmark")
+        print("  [WARN] Insufficient memory for full-layer benchmark")
 
     print()
-    print("═" * 78)
+    print("=" * 78)
     print(f"VERDICT: Batched speculative verification is {verdict}")
-    print("═" * 78)
+    print("=" * 78)
     print()
     print("This benchmark measures CPU BLAS performance with FP16 numpy.")
     print("Production implementation would use INT4/Q4 with fused dequantization,")

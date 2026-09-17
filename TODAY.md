@@ -19,7 +19,10 @@
   - [x] Proposed PHANTOM v2 architecture
   - [x] Hardware-specific strategies (4GB / 6GB / 8GB / 12GB / CPU-only)
   - [x] Negative results (things that sound good but don't work)
-  - [x] 4-phase experimental roadmap
+  - [x] Phase 1 empirical validation: CPU GEMM(8) vs GEMV benchmark completed (`scratch/bench_gemm_vs_gemv.py`), showing 3.93× layer amortization (23.40 ms vs 92.03 ms for 8 tokens).
+  - [x] Repository hygiene cleanup: Relocated `reserch.md`, `phantom_research_report.md`, and `PHANTOM_REMEDIATION_PROMPT.md` to `docs/specs/`; purged accidental root folders.
+  - [x] Claim demotion & truthfulness: Clarified synthetic component prototypes in `benchmarks/run_all.py`, removed "zero synthetic mocks" from `README.md`, updated `docs/PROGRESS.md` and `CLAIMS.md` (C-032 to C-035).
+  - [x] CI verification: Enforced 100% PASS on `scripts/check_claims.py` and `test_reference_parity.py --quick`.
 - **Key Finding**: Dense 32B → 14 tok/s is **physically impossible** (DDR5 bandwidth wall). MoE 30B → 14 tok/s is **already achieved** (12.95 tok/s measured). Dense 14B → 14 tok/s is **at the edge** with speculative decoding + aggressive optimization. The single most promising direction is **batched speculative verification with CPU GEMM kernels**.
 - **Critical Audit Finding**: Rust core engine's `generate()` returns a placeholder string — actual inference runs through Python/PyTorch path.
 

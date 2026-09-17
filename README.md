@@ -18,7 +18,7 @@ Most projects claiming *"run 70B models on a potato laptop"* are vaporware—the
 Instead, PHANTOM targets where modern open-weight AI actually delivers fluid, production-grade utility on consumer hardware:
 1. **Interactive 12.95 tok/s on 30B Sparse MoE models** (`Qwen3-30B-A3B`) — faster than human reading speed on an ordinary $800 laptop with 6.0 GB VRAM.
 2. **Reliable 2.88 to 3.63 tok/s on 32B–35B frontier coding models** (`Qwen2.5-Coder-32B`, `DeepSeek-R1-32B`, `Command-R-35B`) — real in-place DDR5 evaluation, zero OS freezes, and zero PCIe bus thrashing.
-3. **100% mathematically verified**: Every benchmark runs with zero synthetic mocks, verified against CPU FP32 reference logits (100.0% greedy top-1 agreement).
+3. **Strict Ground Truth Verification**: Model evaluations (`Qwen2.5-Coder-32B`, `Qwen3-30B-A3B`, `SmolLM-135M`) are verified against physical hardware baselines with strict greedy top-1 parity gates (`test_reference_parity.py`). Experimental subsystems (Neural Cache, Wraith prefetching, DCT quantization) are documented transparently as active research prototypes.
 
 | Baseline Benchmark Comparison | Standard Baseline Limit | PHANTOM Tiered Runtime | Measured Improvement Multiplier |
 |---|---|---|:---:|
@@ -26,7 +26,7 @@ Instead, PHANTOM targets where modern open-weight AI actually delivers fluid, pr
 | **VRAM Footprint Reduction** | **20.7 GB** min VRAM for 32B 4-bit | **4.56 to 4.71 GB** VRAM | **4.50x reduction** |
 | **MoE Generation Throughput** | **1.3 tok/s** (Dense CPU baseline) | **12.95 tok/s** (Local) / **24.79 tok/s** (Cloud) | **10.0x speedup** (Local) |
 | **Dense Coding Generation Throughput** | **~2.0 tok/s** (Pure CPU DDR5 baseline) | **2.88 to 3.63 tok/s** (Local) | **1.8x median speedup** |
-| **Long-Context KV Cache Footprint** | **4096 MB** at 32K context | **512 MB** (Neural Cache) | **8.0x reduction** (100.0% recall) |
+| **Long-Context KV Cache Prototype** | **4096 MB** at 32K context | **512 MB** (Neural Cache Vector Prototype) | **8.0x vector compression** (Experimental) |
 
 ---
 

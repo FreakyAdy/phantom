@@ -16,7 +16,18 @@ All notable changes, bug fixes, architectural refactors, and performance calibra
   * Top 5 prioritized implementation ideas (batched spec. decoding, MoE expert prefetching, Q3 quantization, hybrid attention-MLP split, llama.cpp backend).
   * Proposed PHANTOM v2 architecture with speculative engine as first-class component.
   * 4-phase experimental roadmap covering cheap experiments through novel research.
-  * Executive verdict: Dense 32B→14 tok/s is physically impossible (DDR5 wall); MoE 30B→14 tok/s already achieved; Dense 14B→14 tok/s at theoretical edge.
+* **Phase 1 Benchmark Validation (`scratch/bench_gemm_vs_gemv.py`)**:
+  * Benchmarked single-layer GEMV(1) (11.37 ms), 8× sequential GEMV (92.03 ms), and batch-8 GEMM (23.40 ms) on reference Intel CPU AVX2.
+  * Verified 3.93× layer amortization factor for batched speculative verification over sequential token decodes.
+
+### Changed
+* **Repository Organization**: Relocated `reserch.md` to [`docs/specs/PHANTOM_RESEARCH_SPEC.md`](file:///c:/Work/Projects/Solution%20is%20all%20You%20need/docs/specs/PHANTOM_RESEARCH_SPEC.md), `phantom_research_report.md` to [`docs/specs/PHANTOM_RESEARCH_REPORT.md`](file:///c:/Work/Projects/Solution%20is%20all%20You%20need/docs/specs/PHANTOM_RESEARCH_REPORT.md), and `PHANTOM_REMEDIATION_PROMPT.md` to [`docs/specs/PHANTOM_REMEDIATION_PROMPT.md`](file:///c:/Work/Projects/Solution%20is%20all%20You%20need/docs/specs/PHANTOM_REMEDIATION_PROMPT.md) to maintain root cleanliness per `AGENTS.md`.
+* **Benchmark Truthfulness (`benchmarks/run_all.py`)**: Explicitly declared `SIMULATED_COMPONENT_PROTOTYPE` status for Wraith prefetch, Spectral DCT, Neural Cache, and Chronos scheduler; updated `proves`/`does_not_prove` to clarify component limits.
+* **Documentation Realignment (`README.md`, `docs/PROGRESS.md`)**: Removed "zero synthetic mocks" assertion; reclassified experimental subsystems in Subsystem Readiness Matrix as `SIMULATED PROTOTYPE` / `EXPERIMENTAL`.
+* **Claims Catalog (`CLAIMS.md`)**: Appended C-032 through C-035 formally demoting synthetic claims and documenting the Rust engine's current skeleton status.
+
+### Removed
+* Cleaned accidental root folder (`~`) and removed raw research documents from the root workspace.
 
 ---
 

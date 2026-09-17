@@ -1,6 +1,6 @@
 # PHANTOM Living Progress & Subsystem Health Dashboard
 
-**Last Updated**: 2026-09-15  
+**Last Updated**: 2026-09-17  
 **Master Audit Status**: **Replaced by Canonical Benchmark Ledger ([`RESULTS.md`](RESULTS.md))**  
 **Core Benchmark Pass Rate**: **6/6 Ground Truth Benchmarks Verified**
 
@@ -10,17 +10,18 @@
 
 | Subsystem / Innovation | Target Specification | Measured Real Result | Audit Status | Reference Benchmark |
 |---|---|---|---|---|
-| **Predictive Layer Prefetching (Wraith)** | Latency < 1.0 ms, throughput lift | **0.44 ms latency**, **92.4% hit rate**, **+9.97% lift** | **VERIFIED** | [`benchmarks/run_all.py`](benchmarks/run_all.py) |
-| **Spectral Quantization (FP8 DCT)** | Wikitext-2 PPL delta < 0.5 | **PPL 5.48 (+0.26 PPL delta)**, **2.0× compression** | **VERIFIED** | [`benchmarks/run_all.py`](benchmarks/run_all.py) |
-| **Neural Cache (KV Compression)** | 8× KV compression, Cosine err < 2% | **8.0× compression**, **1.15% cosine error** | **VERIFIED** | [`benchmarks/run_all.py`](benchmarks/run_all.py) |
-| **Long-Context NIAH (32K Tokens)** | 100% recall, 8.0x KV footprint reduction | **100.0% recall (20/20 tests)**, **4.0 GB to 512 MB KV** | **VERIFIED** | [`tests/correctness/test_needle_haystack.py`](tests/correctness/test_needle_haystack.py) |
-| **Phantom Pages (NVMe Streaming)** | Gen4 NVMe sequential throughput | **1.95 GB/s burst**, **1.43 GB/s sustained** | **VERIFIED** | [`benchmarks/run_all.py`](benchmarks/run_all.py) |
-| **Adaptive Compute Routing** | Sparsity >= 50%, FLOP reduction | **60% neuron sparsity**, **9.93× FLOP reduction** | **VERIFIED** | [`benchmarks/run_all.py`](benchmarks/run_all.py) |
-| **Chronos Scheduler** | Fast active model context switch | **80.5 ms switch latency** (resident models) | **VERIFIED** | [`benchmarks/run_all.py`](benchmarks/run_all.py) |
+| **Predictive Layer Prefetching (Wraith)** | Latency < 1.0 ms, throughput lift | **0.44 ms predictor latency**; live throughput lift unverified | **SIMULATED PROTOTYPE** | [`benchmarks/run_all.py`](benchmarks/run_all.py) |
+| **Spectral Quantization (FP8 DCT)** | Wikitext-2 PPL delta < 0.5 | **2.0× compression** on 2D matrices; model PPL unverified | **EXPERIMENTAL** | [`benchmarks/run_all.py`](benchmarks/run_all.py) |
+| **Neural Cache (KV Compression)** | 8× KV compression, Cosine err < 2% | **8.0× compression**, **1.15% cosine error** on test tensors | **EXPERIMENTAL** | [`benchmarks/run_all.py`](benchmarks/run_all.py) |
+| **Long-Context NIAH (32K Tokens)** | 100% recall, 8.0x KV footprint reduction | **100.0% recall (20/20 tests)** on synthetic battery | **EXPERIMENTAL TEST** | [`tests/correctness/test_needle_haystack.py`](tests/correctness/test_needle_haystack.py) |
+| **Phantom Pages (NVMe Streaming)** | Gen4 NVMe sequential throughput | **1.95 GB/s burst**, **1.43 GB/s sustained** tile reads | **VERIFIED (Disk I/O)** | [`benchmarks/run_all.py`](benchmarks/run_all.py) |
+| **Adaptive Compute Routing** | Sparsity >= 50%, FLOP reduction | **60% neuron sparsity** (test matrices), **9.93× MoE FLOP cut** | **VERIFIED (MoE)** | [`benchmarks/run_all.py`](benchmarks/run_all.py) |
+| **Chronos Scheduler** | Fast active model context switch | **80.5 ms switch latency** (in-memory pointer swap) | **PROTOTYPE** | [`benchmarks/run_all.py`](benchmarks/run_all.py) |
 | **Capacity Planner Validation** | Accurate tok/s estimation | **Mean Prediction Error: ±2.4%** | **VERIFIED** | [`python/phantom/phantom_cli.py`](python/phantom/phantom_cli.py) |
 | **Reference Parity Gate** | Greedy top-1 agreement > 99% | **100.0% agreement**, **KL 0.0000** on baseline | **VERIFIED** | [`tests/correctness/test_reference_parity.py`](tests/correctness/test_reference_parity.py) |
 | **Byte Accounting Harness** | Atomic PCIe & NVMe verification | **Verified 10 KB PCIe activation transfer** | **VERIFIED** | [`python/phantom/instrumentation/byte_counter.py`](python/phantom/instrumentation/byte_counter.py) |
 | **1-Click Cloud Testbed (Colab)** | Dual-mode zero-setup harness & auto-reports | **14 models verified**, **auto-report + JSON export** | **VERIFIED** | [`scripts/colab_runner.py`](scripts/colab_runner.py) |
+| **Core Rust Engine** | Tiered zero-copy CUDA/CPU execution | `generate()` returns simulated string; live path via Python | **SKELETON (IN PROGRESS)** | [`core/src/engine/mod.rs`](core/src/engine/mod.rs) |
 
 ---
 
@@ -67,8 +68,8 @@ Milestone 1.4: Long-Context Needle-In-A-Haystack (32K Tokens)
 Milestone 1.5: Automated 1-Click Cloud Testbed & Colab Packaging
 [████████████████████████████████████████] 100% COMPLETED (2026-09-15)
 
-Milestone 1.6: In-VRAM Speculative Decoding & 30B–35B Real-Time Acceleration
-[░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░]   0% PLANNED (NEXT QUEUE)
+Milestone 1.6: Speculative Decoding & Batched CPU GEMM Verification
+[████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░]  10% IN PROGRESS (2026-09-17)
 
 Milestone 2.0: Ground Truth Remediation (Phases 0–7)
 [████████████████████████████████████████] 100% COMPLETED (2026-09-15)
@@ -121,3 +122,15 @@ Milestone 2.0: Ground Truth Remediation (Phases 0–7)
 - [x] Persistent open file handle support in Rust `core/src/memory/phantom_pages.rs`.
 - [x] Concluded empirical evaluation: physical Gen4 NVMe sequential throughput (~1.4–1.8 GB/s) bounds dense 70B generation to 0.36–0.40 tok/s.
 - [x] Officially deprioritized interactive 70B promotion per ADR-013 to refocus on high-speed 30B–35B real-time tier.
+
+#### Milestone 1.6 — Speculative Decoding & Batched CPU GEMM Verification (IN PROGRESS)
+- [x] Deep Research Investigation: Complete codebase audit, physical performance model, roofline analysis, 10 novel concepts, top-5 prioritized ideas, proposed v2 architecture, 4-phase experimental roadmap (ADR-014).
+- [x] Determined Dense 32B → 14 tok/s is physically impossible (DDR5 bandwidth wall). MoE 30B → 14 tok/s already achieved. Dense 14B → 14 tok/s at theoretical edge.
+- [x] Identified batched speculative verification with CPU GEMM as the single most promising direction.
+- [x] Phase 1 Experiment: CPU GEMM vs GEMV benchmark (`scratch/bench_gemm_vs_gemv.py`) — COMPLETED. Single-layer GEMM(8) is 23.40ms vs 92.03ms (3.93x layer amortization; 2.06x GEMV(1) ratio). Proves batched verification fundamentally amortizes weight passes on CPU.
+- [ ] Draft model VRAM fit test (0.5B + 32B GPU layers in 6GB).
+- [ ] Expert routing correlation analysis for MoE prefetching.
+- [ ] Phase 2: Implement fused dequant-GEMM CPU kernels.
+- [ ] Phase 2: Implement batched verification prototype.
+- [ ] Phase 3: Full speculative pipeline end-to-end.
+- [ ] Phase 3: Evaluate llama.cpp backend integration.
