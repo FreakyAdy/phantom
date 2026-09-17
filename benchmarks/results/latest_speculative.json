@@ -1,40 +1,53 @@
 {
-  "timestamp": "2026-09-17T18:16:11Z",
-  "quick_mode": true,
+  "timestamp": "2026-09-17T18:24:04Z",
+  "quick_mode": false,
   "cpu_threads": 10,
   "gemm_amortization": {
     "batch_1": {
-      "gemv_total_ms": 10.477,
-      "gemm_total_ms": 10.425,
+      "gemv_total_ms": 10.404,
+      "gemm_total_ms": 10.366,
       "amortization_factor": 1.0
     },
+    "batch_2": {
+      "gemv_total_ms": 20.765,
+      "gemm_total_ms": 18.392,
+      "amortization_factor": 1.13
+    },
     "batch_4": {
-      "gemv_total_ms": 41.096,
-      "gemm_total_ms": 18.386,
-      "amortization_factor": 2.24
+      "gemv_total_ms": 52.218,
+      "gemm_total_ms": 19.003,
+      "amortization_factor": 2.75
     },
     "batch_8": {
-      "gemv_total_ms": 82.374,
-      "gemm_total_ms": 19.533,
-      "amortization_factor": 4.22
+      "gemv_total_ms": 84.366,
+      "gemm_total_ms": 19.545,
+      "amortization_factor": 4.32
     }
   },
   "speculative_generation": {
     "k_3": {
-      "tokens_per_second": 3428.4,
+      "tokens_per_second": 4102.88,
       "acceptance_rate": 1.0,
-      "speedup_factor": 1190.42,
+      "speedup_factor": 1424.61,
       "bytes_per_token_mb": 3550.8,
       "draft_time_sec": 0.001,
-      "verify_time_sec": 0.003
+      "verify_time_sec": 0.004
     },
     "k_5": {
-      "tokens_per_second": 3629.6,
+      "tokens_per_second": 4041.17,
       "acceptance_rate": 0.812,
-      "speedup_factor": 1260.28,
-      "bytes_per_token_mb": 3550.8,
+      "speedup_factor": 1403.18,
+      "bytes_per_token_mb": 3106.9,
       "draft_time_sec": 0.001,
-      "verify_time_sec": 0.003
+      "verify_time_sec": 0.006
+    },
+    "k_8": {
+      "tokens_per_second": 3804.13,
+      "acceptance_rate": 0.75,
+      "speedup_factor": 1320.88,
+      "bytes_per_token_mb": 2219.2,
+      "draft_time_sec": 0.001,
+      "verify_time_sec": 0.006
     }
   }
 }
