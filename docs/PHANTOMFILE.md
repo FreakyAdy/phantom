@@ -7,7 +7,7 @@ The **Phantomfile** is a declarative configuration file format for building cust
 ### `FROM <model>`
 Specifies the base model reference.
 ```dockerfile
-FROM llama3:70b
+FROM qwen2.5-coder:32b
 ```
 
 ### `SYSTEM <text>`

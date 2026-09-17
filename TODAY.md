@@ -24,6 +24,7 @@
   - [x] Claim demotion & truthfulness: Clarified synthetic component prototypes in `benchmarks/run_all.py`, removed "zero synthetic mocks" from `README.md`, updated `docs/PROGRESS.md` and `CLAIMS.md` (C-032 to C-035).
   - [x] CI verification: Enforced 100% PASS on `scripts/check_claims.py` and `test_reference_parity.py --quick`.
   - [x] README.md comprehensive update: Integrated the deep research report standards, physical DDR5 bandwidth derivation (197 GB/s vs 48 GB/s), honest runtime status, and the batched speculative verification directive (Milestone 1.6 / ADR-014).
+  - [x] Documentation alignment: Realigned `docs/OLLAMA_MIGRATION.md`, `docs/INNOVATIONS.md`, and `docs/PHANTOMFILE.md` to eliminate legacy 70B marketing, update examples to 32B/MoE, and classify experimental research prototypes per `reserch.md`.
 - **Key Finding**: Dense 32B → 14 tok/s is **physically impossible** (DDR5 bandwidth wall). MoE 30B → 14 tok/s is **already achieved** (12.95 tok/s measured). Dense 14B → 14 tok/s is **at the edge** with speculative decoding + aggressive optimization. The single most promising direction is **batched speculative verification with CPU GEMM kernels**.
 - **Critical Audit Finding**: Rust core engine's `generate()` returns a placeholder string — actual inference runs through Python/PyTorch path.
 

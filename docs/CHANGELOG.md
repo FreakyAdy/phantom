@@ -25,6 +25,7 @@ All notable changes, bug fixes, architectural refactors, and performance calibra
 * **Benchmark Truthfulness (`benchmarks/run_all.py`)**: Explicitly declared `SIMULATED_COMPONENT_PROTOTYPE` status for Wraith prefetch, Spectral DCT, Neural Cache, and Chronos scheduler; updated `proves`/`does_not_prove` to clarify component limits.
 * **Documentation Realignment (`README.md`, `docs/PROGRESS.md`)**: Removed "zero synthetic mocks" assertion; reclassified experimental subsystems in Subsystem Readiness Matrix as `SIMULATED PROTOTYPE` / `EXPERIMENTAL`.
 * **README Standard Overhaul (`README.md`)**: Added physical bandwidth derivation section (`197 GB/s` required vs `48 GB/s` DDR5 ceiling, `4.1x` gap), reframed dense 32B decoding limits, elevated batched speculative verification (`Milestone 1.6` / `ADR-014`) as the primary engineering directive, updated the active roadmap, and linked research specifications directly.
+* **Documentation Realignment (`docs/OLLAMA_MIGRATION.md`, `docs/INNOVATIONS.md`, `docs/PHANTOMFILE.md`)**: Replaced legacy 70B examples with 32B/MoE targets, removed unvalidated marketing claims, and reclassified features into verified architectural tiering vs experimental research prototypes.
 * **Claims Catalog (`CLAIMS.md`)**: Appended C-032 through C-035 formally demoting synthetic claims and documenting the Rust engine's current skeleton status.
 
 ### Removed
