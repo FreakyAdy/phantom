@@ -18,105 +18,50 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 LATEST_JSON = REPO_ROOT / "benchmarks" / "results" / "latest.json"
-V2_LATEST_JSON = REPO_ROOT / "benchmarks" / "results" / "v2_latest.json"
 RESULTS_MD = REPO_ROOT / "RESULTS.md"
 
 
-def _append_v2_section(lines: list, v2: dict) -> None:
-    """Append PHANTOM v2 MD Blueprint metrics from v2_latest.json."""
+def _append_v2_section(lines: list, bm: dict, vm: dict) -> None:
+    """Append PHANTOM v2 spec-decode section from REAL latest.json measurements.
+
+    Formerly rendered fabricated model-free ablation from v2_latest.json
+    (acceptance 1.0, ~3900 tok/s). Removed in ADR-023: only real measurements
+    from benchmarks/run_real.py --focus spec-decode are published here.
+    """
+    spec = bm.get("spec_decode", {})
+    status = spec.get("status", "NOT_RUN")
+
     lines.extend([
         "",
         "---",
         "",
-        "## 6. PHANTOM v2 MD Blueprint (EAGLE-3 + Fusion + Prefetch)",
+        "## 6. PHANTOM v2 — llama.cpp Native Draft Speculative Decode (Real Measurement)",
         "",
-        f"**v2 Timestamp**: `{v2.get('timestamp', v2.get('timestamp_utc', 'N/A'))}`  ",
-        f"**Colab Verified**: `{v2.get('colab_detected', 'N/A')}`  ",
-        "",
-        "### 6.1 Subsystem Micro-Benchmarks",
+        f"**Status**: `{status}`  ",
+    ])
+
+    if status != "REAL_MEASUREMENT":
+        lines.append(
+            "> No live spec-decode measurement recorded in this run. "
+            "Run `python benchmarks/run_real.py --focus spec-decode` on a host with llama-cpp-python "
+            "installed (e.g. the Colab cloud tester) to populate this section."
+        )
+        return
+
+    lines.extend([
         "",
         "| Metric | Value |",
         "|---|---|",
-    ])
-
-    micro = v2.get("subsystem_micro", v2.get("v2_ablation", {}).get("subsystem_micro", {}))
-    if micro:
-        for key, val in micro.items():
-            lines.append(f"| `{key}` | **{val}** |")
-
-    lines.extend([
-        "",
-        "### 6.2 Ablation Matrix",
-        "",
-        "| Configuration | tok/s | Acceptance | Speedup | Prefetch Hit |",
-        "|---|:---:|:---:|:---:|:---:|",
-    ])
-
-    ablation = v2.get("ablation", v2.get("v2_ablation", {}).get("ablation", {}))
-    for cfg, metrics in ablation.items():
-        if not isinstance(metrics, dict):
-            continue
-        lines.append(
-            f"| `{cfg}` | {metrics.get('tokens_per_second', 'N/A')} | "
-            f"{metrics.get('acceptance_rate', 'N/A')} | "
-            f"{metrics.get('speedup_factor', 'N/A')}x | "
-            f"{metrics.get('prefetch_hit_rate', 'N/A')} |"
-        )
-
-    live = v2.get("live_v2", {})
-    if live:
-        lines.extend([
-            "",
-            "### 6.3 Colab Live v2 Decode",
-            "",
-            "| Metric | Value |",
-            "|---|---|",
-            f"| Model | `{live.get('model_key', 'N/A')}` |",
-            f"| Mode | `{live.get('mode', 'N/A')}` |",
-            f"| Throughput | **{live.get('tokens_per_second', 'N/A')} tok/s** |",
-            f"| Acceptance Rate | **{live.get('acceptance_rate', 'N/A')}** |",
-            f"| Speedup | **{live.get('speedup_factor', 'N/A')}x** |",
-        ])
-
-    moe = v2.get("moe_correlation", {})
-    if moe:
-        lines.extend([
-            "",
-            "### 6.4 MoE Expert / Prefetch Correlation",
-            "",
-            "| Metric | Value |",
-            "|---|---|",
-            f"| Mean Expert Overlap | **{moe.get('mean_expert_overlap', 'N/A')}** |",
-            f"| Layer Prediction Accuracy | **{moe.get('layer_prediction_accuracy', 'N/A')}** |",
-            f"| Prefetch Usefulness Score | **{moe.get('prefetch_usefulness_score', 'N/A')}** |",
-            f"| Expert Sparsity | **{moe.get('expert_sparsity_ratio', 'N/A')}** |",
-        ])
-
-    hw = v2.get("hardware_profiles", v2.get("v2_ablation", {}).get("hardware_profiles", {}))
-    if hw:
-        lines.extend([
-            "",
-            "### 6.5 Cross-Hardware v2 Profiles",
-            "",
-            "| GPU Profile | Baseline tok/s | v2 tok/s | Speedup |",
-            "|---|:---:|:---:|:---:|",
-        ])
-        for profile, metrics in hw.items():
-            if isinstance(metrics, dict):
-                lines.append(
-                    f"| `{profile}` | {metrics.get('baseline_tok_s', 'N/A')} | "
-                    f"{metrics.get('v2_tok_s', metrics.get('tokens_per_second', 'N/A'))} | "
-                    f"{metrics.get('speedup_factor', 'N/A')}x |"
-                )
-
-    lines.extend([
-        "",
-        "> **Note**: Simulation-mode ablation tok/s values are micro-benchmark estimates.",
-        "> Colab live-weight results (`live_v2.mode=live_colab`) are the authoritative v2 decode metrics.",
+        f"| Model | `{spec.get('model', 'N/A')}` |",
+        f"| Draft Model | `{spec.get('draft_model', 'N/A')}` |",
+        f"| GPU Layers / Batch | `{spec.get('n_gpu_layers')}` / `{spec.get('n_batch')}` |",
+        f"| Baseline Throughput | **{spec.get('baseline_tok_sec', {}).get('mean', 'N/A')} tok/s** |",
+        f"| Spec-Decode Throughput | **{spec.get('draft_tok_sec', {}).get('mean', 'N/A')} tok/s** |",
+        f"| Speedup Factor | **{spec.get('speedup_factor', 'N/A')}x** |",
     ])
 
 
-def generate_markdown(data: dict, v2_data: dict | None = None) -> str:
+def generate_markdown(data: dict) -> str:
     fp = data.get("environment_fingerprint", {})
     bm = data.get("benchmarks", {})
     vm = data.get("verified_models", {})
@@ -223,8 +168,8 @@ def generate_markdown(data: dict, v2_data: dict | None = None) -> str:
         "> No amount of predictive prefetching can bypass this physical hardware limit.",
     ])
 
-    if v2_data:
-        _append_v2_section(lines, v2_data)
+    if bm:
+        _append_v2_section(lines, bm, vm)
 
     return "\n".join(lines) + "\n"
 
@@ -241,12 +186,7 @@ def main():
     with open(LATEST_JSON, "r", encoding="utf-8") as f:
         data = json.load(f)
 
-    v2_data = None
-    if V2_LATEST_JSON.exists():
-        with open(V2_LATEST_JSON, "r", encoding="utf-8") as f:
-            v2_data = json.load(f)
-
-    generated = generate_markdown(data, v2_data=v2_data)
+    generated = generate_markdown(data)
 
     if args.check:
         if not RESULTS_MD.exists():

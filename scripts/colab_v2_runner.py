@@ -206,19 +206,16 @@ def run_moe_correlation(num_samples: int = 512) -> Dict[str, Any]:
 
 
 def run_v2_ablation(quick: bool = True) -> Dict[str, Any]:
-    """Run v2 ablation benchmark suite."""
-    from benchmarks.phantom_v2_benchmark import (
-        benchmark_ablation,
-        benchmark_hardware_profiles,
-        benchmark_subsystem_micro,
-    )
+    """v2 ablation moved to benchmarks/run_real.py --focus spec-decode.
 
-    tokens = 16 if quick else 32
-    k = 3 if quick else 5
+    Previously used a model-free harness (benchmarks/phantom_v2_benchmark.py)
+    that produced fabricated acceptance=1.0 / ~3900 tok/s values with no models
+    loaded. Removed in ADR-023; real spec-decode measurements are canonical via:
+        python benchmarks/run_real.py --focus spec-decode
+    """
     return {
-        "subsystem_micro": benchmark_subsystem_micro(),
-        "ablation": benchmark_ablation(tokens_to_generate=tokens, k=k),
-        "hardware_profiles": benchmark_hardware_profiles(tokens_to_generate=tokens, k=k),
+        "status": "DEPRECATED_MODEL_FREE_SIMULATION_REMOVED",
+        "note": "Model-free v2 ablation harness deleted (fabricated). Real spec-decode measurements: python benchmarks/run_real.py --focus spec-decode",
     }
 
 
@@ -354,30 +351,28 @@ def run_colab_v2_suite(
             )
             print(f"  Live tok/s: {payload['live_v2']['tokens_per_second']}")
         except Exception as exc:
-            print(f"  Live inference failed ({exc}); falling back to simulation profile.")
-            sim = simulate_model_execution(model_key, preset)
+            print(f"  Live inference FAILED ({exc}); recorded as measurement failure (no fabricated fallback).")
             payload["live_v2"] = {
                 "model_key": model_key,
-                "mode": "simulation_fallback",
-                "tokens_per_second": round(sim.tok_per_sec * 2.5, 2),
-                "acceptance_rate": 0.72,
-                "speedup_factor": 2.5,
+                "mode": "live_measurement_failed",
+                "tokens_per_second": None,
+                "acceptance_rate": None,
+                "speedup_factor": None,
                 "error": str(exc),
             }
     else:
-        sim = simulate_model_execution(model_key, preset)
         payload["live_v2"] = {
             "model_key": model_key,
-            "mode": "dry_run_simulation",
-            "tokens_per_second": round(sim.tok_per_sec * 2.5, 2),
-            "acceptance_rate": 0.72,
-            "speedup_factor": 2.5,
-            "prefetch_hit_rate": 0.0,
-            "baseline_tok_s": sim.tok_per_sec,
+            "mode": "dry_run",
+            "status": "SIMULATED_DISABLED_MEASUREMENT",
+            "tokens_per_second": None,
+            "acceptance_rate": None,
+            "speedup_factor": None,
+            "note": "Dry-run never fabricates speculative-decode tok/s (ADR-018). Run live or use benchmarks/run_real.py --focus spec-decode.",
         }
-        print(f"  Simulated v2 tok/s: {payload['live_v2']['tokens_per_second']}")
+        print(f"  Dry-run: speculative-decode targets require live measurement (not simulated).")
 
-    # 4. v2 ablation benchmark
+    # 4. v2 ablation benchmark (real measurements only)
     print("\n[4/4] v2 ablation benchmark...")
     payload["v2_ablation"] = run_v2_ablation(quick=dry_run)
     print("  Ablation complete.")

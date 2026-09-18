@@ -1438,7 +1438,8 @@ class PhantomCLI:
             )
             engine.load()
 
-            print(f"[PHANTOM] Model loaded: {engine.metrics.n_gpu_layers}/{engine.metrics.n_total_layers} GPU layers")
+            loaded_metrics = engine.get_metrics()
+            print(f"[PHANTOM] Model loaded: {loaded_metrics.n_gpu_layers}/{loaded_metrics.n_total_layers} GPU layers")
             if speculative:
                 print(f"[PHANTOM] Speculative decoding enabled with draft model: {draft_model_id}")
 
@@ -1667,15 +1668,22 @@ class PhantomCLI:
 
         try:
             if v2:
-                from benchmarks.phantom_v2_benchmark import main as v2_main
-                import sys as _sys
-                _argv = ["phantom_v2_benchmark.py", "--quick"] if quick and not run_all else ["phantom_v2_benchmark.py"]
-                old_argv = _sys.argv
-                _sys.argv = _argv
-                try:
-                    return v2_main()
-                finally:
-                    _sys.argv = old_argv
+                import subprocess as _subprocess
+                from benchmarks.run_real import REPO_ROOT as _repo_root
+
+                cmd = [
+                    sys.executable,
+                    str(_repo_root / "benchmarks" / "run_real.py"),
+                    "--focus",
+                    "spec-decode",
+                    "--model",
+                    model,
+                    "--iterations",
+                    "3" if quick else "5",
+                ]
+                print(f"[PHANTOM] v2 spec-decode benchmark (real measurement): {' '.join(cmd)}")
+                result = _subprocess.run(cmd, cwd=_repo_root)
+                return result.returncode
 
             from benchmarks.speculative_benchmark import (
                 benchmark_cpu_gemm_amortization,

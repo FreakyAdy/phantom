@@ -45,7 +45,7 @@ NVMe  ( 0.00 GB): 0 layers in swap
 | **VRAM Resident Layers** | **14 layers** (4.66 GB) | **41 layers** (13.65 GB) | Maximize GPU occupancy |
 | **RAM Resident Layers** | **34 layers** (11.32 GB) | **7 layers** (2.33 GB) | Host memory offload |
 | **NVMe Swap Spillover** | **0 layers** (0 GB) | **0 layers** (0 GB) | Zero SSD latency penalty |
-| **Decoding Speed** | **12.95 tokens/sec** | **24.79 tokens/sec** | Target > 8.0 tok/s |
+| **Decoding Speed** | **12.95 tokens/sec** | **N/A (removed, ADR-023 — was dry-run sim)** | Target > 8.0 tok/s |
 | **Warm Time-To-First-Token (TTFT)** | **0.56 seconds** | **0.30 seconds** | Interactive conversational speed |
 | **Top-K Router Latency** | **54.51 μs** (<0.005% token time) | **46.91 μs** | Ultra-low routing overhead |
 | **Active Bus Traffic per Token** | **4.74 GB / token** | **4.74 GB / token** | High bus efficiency |
@@ -56,7 +56,7 @@ NVMe  ( 0.00 GB): 0 layers in swap
 ## 3. Key Architectural Insights
 
 1. **The MoE Velocity Breakthrough**:
-   * While `Qwen2.5-Coder-32B` (Dense) achieved **2.88 tok/s** under sustained 65.5 GFLOPs load, `Qwen3-30B-A3B` achieves **12.95 tok/s on the laptop** and **24.79 tok/s on the Colab cloud GPU**.
+   * While `Qwen2.5-Coder-32B` (Dense) achieved **2.88 tok/s** under sustained 65.5 GFLOPs load, `Qwen3-30B-A3B` achieves **12.95 tok/s on the laptop**. The previously listed 24.79 tok/s Colab figure was produced by a deleted dry-run artifact and is removed per ADR-019/ADR-023; cloud T4 must be re-measured live.
    * Because 93.8% of expert parameters remain inactive per token, the math load drops by **9.93×**, transforming 30B inference from sluggish batch processing into fluid real-time chat.
 2. **Cloud GPU Acceleration**:
    * On Google Colab, 41 out of 48 layers reside directly in the 15GB GPU memory, virtually eliminating PCIe transfer bottlenecks and yielding an instantaneous 0.3s TTFT.

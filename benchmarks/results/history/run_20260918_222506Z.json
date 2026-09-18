@@ -1,7 +1,7 @@
 {
-  "generated_at_utc": "2026-09-18T22:25:12.434930+00:00",
+  "generated_at_utc": "2026-09-18T22:25:06.018186+00:00",
   "environment_fingerprint": {
-    "timestamp_utc": "2026-09-18T22:25:12.418967+00:00",
+    "timestamp_utc": "2026-09-18T22:24:51.289912+00:00",
     "git_sha": "8855626f96a737fb97b84097a874c028beca532e",
     "git_dirty": true,
     "gpu_name": "NVIDIA GeForce RTX 4050 Laptop GPU",
@@ -13,7 +13,7 @@
     "cpu": "Intel64 Family 6 Model 183 Stepping 1, GenuineIntel",
     "ram_total_gb": 23.78,
     "nvme_model": "NVMe Gen4 SSD",
-    "nvme_seq_read_gbs": 1.97,
+    "nvme_seq_read_gbs": 2.11,
     "nvme_seq_write_gbs": 0.72,
     "os": "Windows 11",
     "python": "3.14.3",
@@ -22,15 +22,25 @@
     "model_id": "qwen2.5-coder:32b",
     "model_bytes": 19800000000,
     "quantization": "q4_k_m",
-    "thermal_state_at_start_c": 54
+    "thermal_state_at_start_c": 53
   },
   "benchmarks": {
-    "spec_decode": {
-      "benchmark": "spec_decode",
-      "status": "SKIPPED_LLAMA_CPP_NOT_INSTALLED",
-      "model": "qwen2.5-coder-32b",
-      "draft_model": "qwen2.5-0.5b",
-      "note": "llama-cpp-python not installed \u2014 spec-decode benchmark skipped on this host."
+    "memory_bandwidth": {
+      "benchmark": "memory_bandwidth",
+      "status": "REAL_MEASUREMENT",
+      "array_size_gb": 4.0,
+      "bandwidth_gbs": 12.2,
+      "run_times_ms": {
+        "samples_count": 3,
+        "mean": 704.123,
+        "stddev": 412.25,
+        "min": 398.5882,
+        "max": 1286.9037,
+        "p50": 426.8771,
+        "p95": 1200.901
+      },
+      "proves": "Measured DDR5 memory bandwidth: 12.2 GB/s (read+write streaming copy).",
+      "does_not_prove": "Does not prove achievable inference throughput which depends on compute and access patterns."
     }
   },
   "verified_models": {

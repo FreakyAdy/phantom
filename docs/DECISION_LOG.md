@@ -282,3 +282,33 @@ This document catalogs critical architectural decisions, engineering trade-offs,
   - Positive: Real expert-aware prefetching that actually issues OS-level I/O hints; tracks actual expert activation; no fake metrics.
   - Negative: Cannot directly observe llama.cpp's internal MoE routing from Python; uses heuristic based on known architecture. Requires OS support for `posix_fadvise`/`madvise`.
 
+---
+
+### ADR-022: llama.cpp Native Draft Speculative Decode as the Carried v2 Mechanism
+* **Context**: The torch EAGLE-3 stack (ADR-016) was validated only in dry-run mode with LCG draft tokens, `torch.randn` target logits, forced 70% acceptance, and synthetic training data (loss diverged to ~423). Its recorded output (13.73 tok/s, 24.79 tok/s cloud, up to 3923 tok/s ablation) was fabrication traced to `colab_v2_runner.py`'s hardcoded `sim.tok_per_sec * 2.5` multiplier and the model-free `benchmarks/phantom_v2_benchmark.py`. Meanwhile `LlamaCppEngine` already wires llama.cpp's native `draft_model=` speculative decoding, which batch-verifies drafted tokens inside llama.cpp (applying the ADR-020 CPU GEMM amortization per verify step).
+* **Decision**:
+  1. **v2 targets (dense 32B 7-10 tok/s, MoE 30B 14-18 tok/s) are carried by llama.cpp native draft-model spec-decode** (draft = qwen2.5-0.5b default) measured via `benchmarks/run_real.py --focus spec-decode`.
+  2. **EAGLE-3 moved to follow-up only**: no further investment until native draft results are measured on real hardware.
+  3. **Delete** `benchmarks/phantom_v2_benchmark.py` (model-free harness). `colab_v2_runner.py` v2 ablation returns a DEPRECATED marker.
+  4. Fix `phantom_cli.py` `engine.metrics` AttributeError so the primary llama.cpp decode path actually executes (previously every run fell through to the simulated stack).
+  5. `benchmarks/run_real.py` gains `--focus spec-decode --model --draft-model --ngl --n-batch` for the canonical measurement.
+* **Consequences**:
+  - Positive: Real, hardware-truthful path to v2 targets with zero fabricated numbers; single harness reusable on Colab and laptop.
+  - Negative: EAGLE-3's higher ceiling is deferred; llama.cpp acceptance rate is not observable from Python (end-to-end tok/s is the ground truth).
+
+---
+
+### ADR-023: Purge of Residual v2 Fabrication (2.5x Multiplier, Model-Free Ablation, 24.79 Cloud Figure)
+* **Context**: Audit after ADR-022 found residual fabrication still shipping:
+  - `colab_v2_runner.py` dry-run/live-failure paths produced `sim.tok_per_sec * 2.5`, `acceptance_rate=0.72`, `speedup_factor=2.5`.
+  - `benchmarks/phantom_v2_benchmark.py` built engines with NO models → 3923 tok/s `draft_only`, acceptance 1.0, 154-172 tok/s projected 4050 profiles.
+  - `benchmarks/results/v2_latest.json`, `test_16_phantom_v2_colab.md`, and `docs/testing/INDEX.md` (test_03/test_16 rows) and `latest.json` `verified_models` carried these figures; qwen3 24.79 tok/s "Cloud" traced to a deleted dry-run artifact.
+* **Decision**:
+  1. Delete `benchmarks/phantom_v2_benchmark.py`. `colab_v2_runner.py` writes `mode: dry_run` / `status: SIMULATED_DISABLED_MEASUREMENT` (tok/s=None) or `mode: live_measurement_failed` (error only) — never fabricated numbers.
+  2. Delete fabricated `benchmarks/results/v2_latest.json`. `RESULTS.md` section 6 now renders ONLY real `spec_decode` measurements from `latest.json` (`scripts/generate_results.py` no longer reads v2_latest.json).
+  3. Remove `measured_tok_s_cloud_t4: 24.79` from `latest.json` `verified_models`; annotate test_03 and void test_16 in `docs/testing/`, correcting `INDEX.md` rows.
+  4. Default `n_batch` in `run_real.py` CLI set to 512; graceful `SKIPPED_LLAMA_CPP_NOT_INSTALLED` before any weight download when llama-cpp-python is absent.
+* **Consequences**:
+  - Positive: Every published v2 figure is either a real measurement or explicitly NOT MEASURED; restores ADR-018 compliance.
+  - Negative: No v2 tok/s claims exist until a live spec-decode benchmark runs (Colab cloud tester).
+

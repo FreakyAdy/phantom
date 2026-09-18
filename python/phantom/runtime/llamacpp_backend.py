@@ -21,6 +21,18 @@ class LlamaCppMetrics:
     total_weight_bytes: int = 0
     n_gpu_layers: int = 0
     n_total_layers: int = 0
+    draft_model: bool = False
+    draft_model_id: str | None = None
+
+
+def _measure_ram_gb() -> float:
+    """Best-effort resident set size of the current process (GB)."""
+    try:
+        import psutil
+
+        return psutil.Process().memory_info().rss / (1024**3)
+    except Exception:
+        return 0.0
 
 
 class LlamaCppEngine:
@@ -33,6 +45,7 @@ class LlamaCppEngine:
         n_threads: int | None = None,
         verbose: bool = False,
         draft_model_path: str | Path | None = None,
+        draft_model_id: str | None = None,
     ):
         self.model_path = Path(model_path)
         self.n_gpu_layers = n_gpu_layers
@@ -41,6 +54,7 @@ class LlamaCppEngine:
         self.n_threads = n_threads or os.cpu_count()
         self.verbose = verbose
         self.draft_model_path = Path(draft_model_path) if draft_model_path else None
+        self.draft_model_id = draft_model_id
 
         self._llama: Any = None
         self._metrics = LlamaCppMetrics()
@@ -83,6 +97,11 @@ class LlamaCppEngine:
         logger.info(f"Model loaded in {load_time:.2f}s" + (" with draft model" if draft_model else ""))
 
         self._compute_weight_bytes()
+
+        self._metrics.draft_model = self.draft_model_path is not None
+        self._metrics.draft_model_id = self.draft_model_id or (
+            self.draft_model_path.name if self.draft_model_path else None
+        )
 
     def _compute_weight_bytes(self) -> None:
         if not self._llama:
@@ -219,6 +238,8 @@ class LlamaCppEngine:
         except Exception:
             pass
 
+        self._metrics.ram_used_gb = _measure_ram_gb()
+
     def get_metrics(self) -> LlamaCppMetrics:
         return self._metrics
 
@@ -309,4 +330,5 @@ def create_engine_for_model(
         n_ctx=n_ctx,
         n_batch=n_batch,
         draft_model_path=draft_path,
+        draft_model_id=draft_model_id,
     )

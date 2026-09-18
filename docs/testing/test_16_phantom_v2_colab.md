@@ -1,9 +1,17 @@
 # Test 16: PHANTOM v2 MD Blueprint — Google Colab Live Verification
 
+> **⚠️ SUPERSEDED / VOIDED (ADR-023)**: The tok/s, acceptance-rate, and speedup figures in
+> this report were produced by a model-free simulation harness that fabricated
+> `sim.tok_per_sec * 2.5` throughput, forced 70% acceptance, and acceptance=1.0 /
+> ~240-3900 tok/s ablation rows with no model loaded. These are NOT real measurements
+> and must not be cited. The harness (`benchmarks/phantom_v2_benchmark.py`) was deleted
+> and `colab_v2_runner.py` no longer fabricates numbers. Real spec-decode measurements
+> are generated only by `python benchmarks/run_real.py --focus spec-decode`.
+
 **Audit Date**: 2026-09-18  
 **Target System**: Local dry-run validation (Colab live pending)  
 **Execution Mode**: `--dry-run` (simulation + synthetic EAGLE training; no GGUF download)  
-**Test Objective**: v2 Colab harness validation — EAGLE training, MoE prefetch correlation, v2 ablation merge.
+**Test Objective**: ~~v2 Colab harness validation~~ — VOIDED per ADR-023; see banner above.
 
 ---
 

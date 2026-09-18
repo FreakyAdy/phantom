@@ -32,6 +32,14 @@ from phantom.instrumentation.fingerprint import get_environment_fingerprint
 from phantom.runtime import create_engine_for_model
 
 
+def _llama_cpp_available() -> bool:
+    try:
+        import llama_cpp  # noqa: F401
+        return True
+    except ImportError:
+        return False
+
+
 def compute_statistics(samples: List[float]) -> Dict[str, float]:
     """Calculate mean, stddev, min, max, p50, and p95 across samples."""
     arr = np.array(samples, dtype=float)
@@ -65,7 +73,18 @@ def benchmark_real_inference(
         n_ctx=4096,
         n_batch=512,
     )
-    engine.load()
+    try:
+        engine.load()
+    except RuntimeError as e:
+        if "llama-cpp-python not installed" in str(e):
+            print(f"  [SKIPPED] llama-cpp-python not installed — cannot run {model_id}.")
+            return {
+                "benchmark": "real_inference",
+                "status": "SKIPPED_LLAMA_CPP_NOT_INSTALLED",
+                "model": model_id,
+                "note": "llama-cpp-python not installed — benchmark skipped on this host.",
+            }
+        raise
 
     # Warmup
     print(f"    Warming up...")
@@ -128,9 +147,114 @@ def benchmark_real_inference(
     }
 
 
+def benchmark_spec_decode(
+    model_id: str = "qwen2.5-coder-32b",
+    draft_model_id: str = "qwen2.5-0.5b",
+    n_gpu_layers: int = 0,
+    n_batch: int = 512,
+    n_iter: int = 5,
+    max_tokens: int = 32,
+) -> Dict[str, Any]:
+    """Real llama.cpp native speculative-decode benchmark: baseline vs draft model.
+
+    Measures end-to-end throughput with and without a draft model using the same
+    target weights and engine configuration. Everything here is a live measurement.
+    """
+    print(f"  [REAL BENCHMARK] spec_decode {model_id} draft={draft_model_id} "
+          f"(n_gpu_layers={n_gpu_layers}, n_batch={n_batch})")
+
+    if not _llama_cpp_available():
+        print(f"  [SKIPPED] llama-cpp-python not installed — spec-decode benchmark skipped before any download.")
+        return {
+            "benchmark": "spec_decode",
+            "status": "SKIPPED_LLAMA_CPP_NOT_INSTALLED",
+            "model": model_id,
+            "draft_model": draft_model_id,
+            "note": "llama-cpp-python not installed — spec-decode benchmark skipped on this host.",
+        }
+
+    prompts = [
+        "Write a short Python function that computes the nth Fibonacci number.",
+        "Explain what the CAP theorem states in one paragraph.",
+        "What is the difference between a queue and a stack?",
+        "Describe the principle of least privilege concisely.",
+        "Write a one-line explanation of how HTTP caching works.",
+    ]
+
+    def _measure(use_draft: bool) -> List[float]:
+        engine = create_engine_for_model(
+            model_id=model_id,
+            n_gpu_layers=n_gpu_layers,
+            n_ctx=4096,
+            n_batch=n_batch,
+            speculative=use_draft,
+            draft_model_id=draft_model_id if use_draft else None,
+        )
+        engine.load()
+
+        samples: List[float] = []
+        for _ in range(2):
+            _ = list(engine.generate("Warmup prompt for spec decode.", max_tokens=8, temperature=0.0, stream=True))
+
+        for i in range(n_iter):
+            prompt = prompts[i % len(prompts)]
+            start = time.perf_counter()
+            token_count = 0
+            for token in engine.generate(prompt, max_tokens=max_tokens, temperature=0.0, stream=True):
+                if isinstance(token, str) and token:
+                    token_count += 1
+            elapsed = time.perf_counter() - start
+            if elapsed > 0 and token_count > 0:
+                samples.append(token_count / elapsed)
+                print(f"    {'DRAFT' if use_draft else 'BASE':5s} Iter {i+1}/{n_iter}: {samples[-1]:.2f} tok/s")
+
+        engine.unload()
+        return samples
+
+    try:
+        baseline = _measure(use_draft=False)
+    except RuntimeError as e:
+        if "llama-cpp-python not installed" in str(e):
+            return {
+                "benchmark": "spec_decode",
+                "status": "SKIPPED_LLAMA_CPP_NOT_INSTALLED",
+                "model": model_id,
+                "draft_model": draft_model_id,
+                "note": "llama-cpp-python not installed — spec-decode benchmark skipped on this host.",
+            }
+        raise
+
+    draft = _measure(use_draft=True)
+
+    if not baseline or not draft:
+        return {
+            "benchmark": "spec_decode",
+            "status": "REAL_MEASUREMENT",
+            "model": model_id,
+            "error": f"Insufficient samples (baseline={len(baseline)}, draft={len(draft)})",
+        }
+
+    b_mean = float(np.mean(baseline))
+    d_mean = float(np.mean(draft))
+    speedup = d_mean / b_mean if b_mean > 0 else 0.0
+
+    return {
+        "benchmark": "spec_decode",
+        "status": "REAL_MEASUREMENT",
+        "model": model_id,
+        "draft_model": draft_model_id,
+        "n_gpu_layers": n_gpu_layers,
+        "n_batch": n_batch,
+        "baseline_tok_sec": compute_statistics(baseline),
+        "draft_tok_sec": compute_statistics(draft),
+        "speedup_factor": round(speedup, 3),
+        "proves": f"llama.cpp native speculative decode runs on real weights: {b_mean:.2f} tok/s baseline -> {d_mean:.2f} tok/s with {draft_model_id} draft ({speedup:.2f}x).",
+        "does_not_prove": "Does not prove the same speedup on the RTX 4050 laptop without measuring there.",
+    }
+
+
 def benchmark_cpu_gemm_amortization(n: int = 10) -> Dict[str, Any]:
     """Real CPU GEMM vs GEMV amortization benchmark."""
-    print("  [REAL BENCHMARK] cpu_gemm_amortization...")
     
     import torch
     
@@ -248,22 +372,48 @@ def benchmark_memory_bandwidth(n: int = 10) -> Dict[str, Any]:
     }
 
 
-def run_real_benchmark_suite(n_iter: int = 10) -> Dict[str, Any]:
+def run_real_benchmark_suite(
+    n_iter: int = 10,
+    focus: str = "all",
+    model_id: str = "qwen2.5-coder-32b",
+    draft_model_id: str = "qwen2.5-0.5b",
+    n_gpu_layers: int = 0,
+    n_batch: int = 512,
+    max_tokens: int = 32,
+) -> Dict[str, Any]:
     """Run all real benchmarks and generate canonical latest.json."""
     print("=" * 80)
     print("  PHANTOM REAL BENCHMARK SUITE (GROUND TRUTH)")
     print("=" * 80)
     print(f"  Iterations per benchmark: N = {n_iter} (after warmup)")
+    print(f"  Focus: {focus}")
     print("  Emitting to: benchmarks/results/latest.json\n")
 
     fingerprint = get_environment_fingerprint()
 
-    benchmarks_data = {
-        "real_inference_smolLM": benchmark_real_inference("smollm-135m", n_gpu_layers=999, n_iter=n_iter),
-        "cpu_gemm_amortization": benchmark_cpu_gemm_amortization(n=n_iter),
-        "nvme_tile_io": benchmark_nvme_tile_io(n=n_iter),
-        "memory_bandwidth": benchmark_memory_bandwidth(n=n_iter),
-    }
+    benchmarks_data: Dict[str, Any] = {}
+
+    if focus in ("all", "smollm"):
+        benchmarks_data["real_inference_smolLM"] = benchmark_real_inference("smollm-135m", n_gpu_layers=999, n_iter=n_iter)
+
+    if focus in ("all", "gemm"):
+        benchmarks_data["cpu_gemm_amortization"] = benchmark_cpu_gemm_amortization(n=n_iter)
+
+    if focus in ("all", "nvme"):
+        benchmarks_data["nvme_tile_io"] = benchmark_nvme_tile_io(n=n_iter)
+
+    if focus in ("all", "memory"):
+        benchmarks_data["memory_bandwidth"] = benchmark_memory_bandwidth(n=n_iter)
+
+    if focus in ("all", "spec-decode"):
+        benchmarks_data["spec_decode"] = benchmark_spec_decode(
+            model_id=model_id,
+            draft_model_id=draft_model_id,
+            n_gpu_layers=n_gpu_layers,
+            n_batch=n_batch,
+            n_iter=min(n_iter, 5),
+            max_tokens=max_tokens,
+        )
 
     # Try larger model if VRAM allows
     try:
@@ -293,9 +443,9 @@ def run_real_benchmark_suite(n_iter: int = 10) -> Dict[str, Any]:
                 "active_parameters_b": 3.3,
                 "architecture": "MoE",
                 "measured_tok_s_laptop": 12.95,
-                "measured_tok_s_cloud_t4": 24.79,
-                "hardware": "RTX 4050 Laptop & Colab Cloud T4",
+                "hardware": "RTX 4050 Laptop (6GB VRAM) + 24GB DDR5 RAM",
                 "proof_report": "docs/testing/test_03_qwen3_30b_a3b.md",
+                "note": "Previously-listed 24.79 tok/s Colab T4 figure removed: it traced to a dry-run artifact deleted in the ADR-019 fabrication purge. Cloud T4 must be re-measured live.",
             },
             "llama3-70b": {
                 "parameters_b": 70.6,
@@ -306,6 +456,18 @@ def run_real_benchmark_suite(n_iter: int = 10) -> Dict[str, Any]:
             },
         },
     }
+
+    spec = benchmarks_data.get("spec_decode")
+    if spec and spec.get("status") == "REAL_MEASUREMENT":
+        result_payload["verified_models"][f"{spec.get('model', model_id)}_spec_decode"] = {
+            "architecture": f"Dense + llama.cpp native draft spec-decode ({spec.get('draft_model')})",
+            "measured_tok_s": round(spec.get("draft_tok_sec", {}).get("mean", 0.0), 2),
+            "baseline_tok_s": round(spec.get("baseline_tok_sec", {}).get("mean", 0.0), 2),
+            "speedup_factor": spec.get("speedup_factor"),
+            "draft_model": spec.get("draft_model"),
+            "hardware": f"n_gpu_layers={spec.get('n_gpu_layers')}, n_batch={spec.get('n_batch')}",
+            "proof_report": "benchmarks/results/latest.json",
+        }
 
     # Save latest.json
     results_dir = REPO_ROOT / "benchmarks" / "results"
@@ -330,4 +492,28 @@ def run_real_benchmark_suite(n_iter: int = 10) -> Dict[str, Any]:
 
 
 if __name__ == "__main__":
-    run_real_benchmark_suite(n_iter=10)
+    import argparse
+
+    parser = argparse.ArgumentParser(description="PHANTOM real benchmark suite (ground truth leading)")
+    parser.add_argument("--focus", default="all",
+                        choices=["all", "smollm", "gemm", "nvme", "memory", "spec-decode"],
+                        help="Which benchmark group to run")
+    parser.add_argument("--model", default="qwen2.5-coder-32b",
+                        help="Target model for spec-decode benchmark (default: qwen2.5-coder-32b)")
+    parser.add_argument("--draft-model", default="qwen2.5-0.5b",
+                        help="Draft model for native speculative decoding (default: qwen2.5-0.5b)")
+    parser.add_argument("--ngl", type=int, default=0, help="GPU layers for spec-decode run")
+    parser.add_argument("--n-batch", type=int, default=512, help="Batch size for GPU layer processing")
+    parser.add_argument("--iterations", type=int, default=10, help="Iterations per benchmark")
+    parser.add_argument("--max-tokens", type=int, default=32, help="Max tokens per spec-decode generation")
+    args = parser.parse_args()
+
+    run_real_benchmark_suite(
+        n_iter=args.iterations,
+        focus=args.focus,
+        model_id=args.model,
+        draft_model_id=args.draft_model,
+        n_gpu_layers=args.ngl,
+        n_batch=args.n_batch,
+        max_tokens=args.max_tokens,
+    )

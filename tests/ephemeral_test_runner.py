@@ -212,54 +212,73 @@ def run_ephemeral_test(
         print("--- Step 3: Executing Non-Synthetic Verification Battery ---")
         
         # Load model via llama.cpp backend for real inference
-        engine = create_engine_for_model(
-            model_id=model_id,
-            n_gpu_layers=min(14, hw.vram_gb * 2),  # heuristic: ~2GB VRAM per layer
-            n_ctx=4096,
-            n_batch=512,
-        )
-        engine.load()
+        skipped_no_backend = False
+        try:
+            engine = create_engine_for_model(
+                model_id=model_id,
+                n_gpu_layers=min(14, hw.vram_gb * 2),  # heuristic: ~2GB VRAM per layer
+                n_ctx=4096,
+                n_batch=512,
+            )
+            engine.load()
+        except RuntimeError as e:
+            if "llama-cpp-python not installed" in str(e):
+                print("⚠ llama-cpp-python not installed — marking tasks SKIPPED (no fabricated inference).")
+                skipped_no_backend = True
+            else:
+                raise
 
-        for test in TEST_BATTERY:
-            print(f"Running {test['name']}...")
-            t0 = time.time()
-            
-            # Run real inference via llama.cpp
-            prompt = test["prompt"]
-            response_text = ""
-            for token in engine.generate(
-                prompt=prompt,
-                max_tokens=128,
-                temperature=0.1,
-                top_p=0.95,
-                top_k=40,
-                repeat_penalty=1.1,
-                stream=True,
-            ):
-                if isinstance(token, str):
-                    response_text += token
-            
-            elapsed = time.time() - t0
-            
-            # Check if target is in response (case-insensitive substring match)
-            target_lower = test["target"].lower()
-            passed = target_lower in response_text.lower()
-            
-            results["execution"].append({
-                "test_id": test["id"],
-                "name": test["name"],
-                "status": "PASS" if passed else "FAIL",
-                "target_verified": test["target"],
-                "response": response_text[:500],
-                "elapsed_sec": elapsed,
-            })
-            
-            status_str = "PASS" if passed else "FAIL"
-            print(f"  [{status_str} - Target: {test['target']}] Response: {response_text[:100]}...")
+        if skipped_no_backend:
+            for test in TEST_BATTERY:
+                results["execution"].append({
+                    "test_id": test["id"],
+                    "name": test["name"],
+                    "status": "SKIPPED_LLAMA_CPP_NOT_INSTALLED",
+                    "target_verified": test["target"],
+                    "response": "",
+                    "elapsed_sec": 0.0,
+                })
+                print(f"  [SKIPPED - llama-cpp-python not installed] {test['name']}")
+        else:
+            for test in TEST_BATTERY:
+                print(f"Running {test['name']}...")
+                t0 = time.time()
+                
+                # Run real inference via llama.cpp
+                prompt = test["prompt"]
+                response_text = ""
+                for token in engine.generate(
+                    prompt=prompt,
+                    max_tokens=128,
+                    temperature=0.1,
+                    top_p=0.95,
+                    top_k=40,
+                    repeat_penalty=1.1,
+                    stream=True,
+                ):
+                    if isinstance(token, str):
+                        response_text += token
+                
+                elapsed = time.time() - t0
+                
+                # Check if target is in response (case-insensitive substring match)
+                target_lower = test["target"].lower()
+                passed = target_lower in response_text.lower()
+                
+                results["execution"].append({
+                    "test_id": test["id"],
+                    "name": test["name"],
+                    "status": "PASS" if passed else "FAIL",
+                    "target_verified": test["target"],
+                    "response": response_text[:500],
+                    "elapsed_sec": elapsed,
+                })
+                
+                status_str = "PASS" if passed else "FAIL"
+                print(f"  [{status_str} - Target: {test['target']}] Response: {response_text[:100]}...")
 
-        engine.unload()
-
-        print("\n✓ All test battery tasks completed successfully.")
+            engine.unload()
+            print("\n✓ All test battery tasks completed successfully.")
 
     finally:
         # 6. Guaranteed Auto-Purge of weights
