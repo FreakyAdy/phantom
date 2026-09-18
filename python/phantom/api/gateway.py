@@ -157,11 +157,39 @@ gateway_app.include_router(ollama_router)
 
 @gateway_app.get("/v1/metrics")
 async def get_metrics():
-    """Real-time metrics schema matching Section 9 specification."""
+    """Real-time metrics from actual measurements or latest benchmark data."""
     hw = detect_hardware()
-    vram_used = 5821
-    ram_used = 22400
-    nvme_used = 45000
+    
+    # Try to load real metrics from latest.json
+    latest_path = Path("benchmarks/results/latest.json")
+    real_metrics = {}
+    if latest_path.exists():
+        try:
+            with open(latest_path, "r") as f:
+                data = json.load(f)
+                benchmarks = data.get("benchmarks", {})
+                if "llama_cpp_inference" in benchmarks:
+                    inf = benchmarks["llama_cpp_inference"]
+                    if "throughput_tok_sec" in inf:
+                        real_metrics["tok_per_sec"] = inf["throughput_tok_sec"].get("mean", 0)
+                if "memory_bandwidth" in benchmarks:
+                    bw = benchmarks["memory_bandwidth"]
+                    real_metrics["memory_bandwidth_gbs"] = bw.get("bandwidth_gbs", 0)
+        except Exception:
+            pass
+
+    # Measure real VRAM if CUDA available
+    vram_used = 0
+    try:
+        import torch
+        if torch.cuda.is_available():
+            vram_used = int(torch.cuda.memory_allocated() / (1024**2))
+    except Exception:
+        pass
+
+    # Estimate RAM usage from model weights (if any loaded)
+    ram_used = 0
+    nvme_used = 0
 
     return {
         "vram_mb": vram_used,
@@ -172,14 +200,14 @@ async def get_metrics():
             "ram": list(range(18, 55)),
             "nvme": list(range(55, 80)),
         },
-        "wraith_accuracy_pct": 87.3,
-        "kv_compression_ratio": 7.8,
-        "active_sparsity_pct": 61.2,
-        "tok_per_sec": 4.2,
+        "wraith_accuracy_pct": 0.0,  # Not measured
+        "kv_compression_ratio": 1.0,  # Not measured
+        "active_sparsity_pct": 0.0,  # Not measured
+        "tok_per_sec": real_metrics.get("tok_per_sec", 0.0),
         "thermal_state": "nominal",
         "throttle_active": False,
         "active_model": state.active_model,
-        "context_tokens_used": 16384,
+        "context_tokens_used": 0,
         "context_tokens_max": 32768,
         "queued_requests": state.queue_depth,
         "hardware_tier": hw.tier,

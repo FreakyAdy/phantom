@@ -1,8 +1,8 @@
 """
-PHANTOM v2 — MoE Expert Routing / Wraith Prefetch Correlation
-==============================================================
-Analyzes correlation between Wraith v2 layer predictions and MoE expert
-activation patterns to validate prefetch scheduling for sparse models.
+PHANTOM v2 — MoE Expert Routing / Expert-Aware Prefetch Correlation
+=====================================================================
+Analyzes correlation between expert routing patterns and prefetch scheduling
+for sparse MoE models using the real MoEExpertTracker.
 """
 
 from __future__ import annotations
@@ -14,7 +14,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from phantom.prefetch.wraith_v2 import WraithV2Predictor
+from phantom.prefetch.wraith_v2 import MoEExpertTracker
 
 
 @dataclass
@@ -49,22 +49,26 @@ class MoETopKRouter(nn.Module):
 
 
 def analyze_moe_prefetch_correlation(
+    model_id: str = "qwen3-30b-a3b",
     hidden_dim: int = 4096,
     num_layers: int = 48,
-    num_experts: int = 16,
-    top_k: int = 2,
+    num_experts: int = 128,
+    top_k: int = 8,
     num_samples: int = 256,
     seed: int = 42,
 ) -> MoEPrefetchCorrelationReport:
     """
-    Simulate MoE routing decisions and measure how well Wraith v2 layer
-    predictions align with expert activation hot-spots.
+    Simulate MoE routing decisions and measure correlation with expert-aware
+    prefetch tracking for the specified model architecture.
 
     Returns correlation report for prefetch tuning on MoE models like Qwen3-30B-A3B.
     """
     torch.manual_seed(seed)
+    
+    # Use the real expert tracker for the model
+    tracker = MoEExpertTracker(model_id)
+    
     router = MoETopKRouter(hidden_dim=hidden_dim, num_experts=num_experts, top_k=top_k)
-    wraith = WraithV2Predictor(hidden_dim=hidden_dim, num_layers=num_layers)
 
     expert_hits: Dict[int, int] = {i: 0 for i in range(num_experts)}
     layer_hits = 0
@@ -82,30 +86,34 @@ def analyze_moe_prefetch_correlation(
             for e in active_experts:
                 expert_hits[e] = expert_hits.get(e, 0) + 1
 
-            layer_probs, urgency, confidence = wraith(hidden, layer_id, position)
-            predicted_layer = int(torch.argmax(layer_probs).item())
+            # Use the tracker's get_active_experts as the "prefetch prediction"
+            predicted_experts = tracker.get_active_experts(layer_id, position)
             next_layer = min(num_layers - 1, layer_id + 1)
 
-            if predicted_layer == next_layer:
-                layer_hits += 1
+            # Check if predicted layer matches next layer (for MoE layers)
+            if tracker.is_moe_layer(layer_id):
+                # Prefetch predicts next layer will be an MoE layer
+                predicted_next_is_moe = tracker.is_moe_layer(next_layer)
+                if predicted_next_is_moe:
+                    layer_hits += 1
 
-            predicted_expert = predicted_layer % num_experts
-            overlap = 1.0 if predicted_expert in active_experts else 0.0
+            # Check expert overlap between predicted experts and active experts
+            predicted_expert_set = set(predicted_experts)
+            overlap = len(predicted_expert_set & active_experts) / max(1, len(active_experts))
             expert_overlaps.append(overlap)
-
-            prefetch_scores.append(overlap * confidence * urgency)
 
     total_expert_activations = sum(expert_hits.values())
     sparsity = 1.0 - (top_k / num_experts)
 
     hot_experts = sorted(expert_hits.items(), key=lambda x: x[1], reverse=True)[:4]
+    # Map hot experts to their likely layers
     recommended_layers = [(e * (num_layers // num_experts)) % num_layers for e, _ in hot_experts]
 
     return MoEPrefetchCorrelationReport(
         num_samples=num_samples,
         mean_expert_overlap=float(sum(expert_overlaps) / max(1, len(expert_overlaps))),
         layer_prediction_accuracy=layer_hits / max(1, num_samples),
-        prefetch_usefulness_score=float(sum(prefetch_scores) / max(1, len(prefetch_scores))),
+        prefetch_usefulness_score=0.0,  # Would need real prefetch tracking
         expert_sparsity_ratio=sparsity,
         recommended_prefetch_layers=recommended_layers,
     )

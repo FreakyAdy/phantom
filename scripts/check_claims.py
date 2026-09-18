@@ -134,12 +134,8 @@ def scan_markdown_files(approved_values: Set[str]) -> Tuple[int, int, List[str]]
                     val_str in approved_values
                     or f"{float(val_str):.1f}" in approved_values
                     or f"{float(val_str):.2f}" in approved_values
-                    or float(val_str) in [1.0, 2.0, 3.0, 4.0, 5.0, 10.0, 100.0, 0.0]
                 )
                 if not is_approved:
-                    # Check for integers
-                    if val_str.isdigit() and int(val_str) < 10:
-                        continue
                     violations.append(f"{md_file.relative_to(REPO_ROOT)}:{i} — Unverified metric '{match.group(0)}' (value: {val_str})")
 
     return total_scanned_files, total_claims_checked, violations

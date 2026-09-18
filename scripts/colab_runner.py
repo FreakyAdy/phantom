@@ -47,6 +47,7 @@ from phantom.model_profiles.hardware_simulator import (
     resolve_model_spec,
     simulate_model_execution,
 )
+from phantom.runtime import create_engine_for_model, resolve_model_path
 
 
 MODEL_REGISTRY: Dict[str, Dict[str, Any]] = {
@@ -72,8 +73,8 @@ MODEL_REGISTRY: Dict[str, Dict[str, Any]] = {
     },
     "qwen3-30b-a3b": {
         "name": "Qwen3-30B-A3B",
-        "repo": "bartowski/Qwen2.5-Coder-32B-Instruct-GGUF",
-        "file": "Qwen2.5-Coder-32B-Instruct-Q4_K_M.gguf",  # Proxy reference
+        "repo": "bartowski/Qwen3-30B-A3B-Instruct-GGUF",
+        "file": "Qwen3-30B-A3B-Instruct-Q4_K_M.gguf",
         "params_b": 30.5,
         "active_b": 3.3,
         "arch": "MoE Sparse (~3.3B Active)",
@@ -342,15 +343,85 @@ def run_cloud_benchmark(
     # 2. Execute verification battery
     task_results = []
     print("\n  Executing Non-Synthetic Verification Battery:")
+    
+    if not dry_run:
+        # Load model via llama.cpp backend for real inference
+        try:
+            engine = create_engine_for_model(
+                model_id=model_key,
+                n_gpu_layers=min(20, 20),  # heuristic for T4 (15GB VRAM)
+                n_ctx=4096,
+                n_batch=512,
+            )
+            engine.load()
+            print(f"  [MODEL LOADED] {meta['name']} via llama.cpp backend")
+        except Exception as e:
+            print(f"  [ERROR] Failed to load model: {e}")
+            # Mark all tasks as FAIL if model load fails
+            for t in VERIFICATION_TASKS:
+                task_results.append({
+                    "id": t["id"],
+                    "name": t["name"],
+                    "prompt": t["prompt"],
+                    "expected": t["expected"],
+                    "status": "FAIL",
+                    "error": f"Model load failed: {e}",
+                })
+            engine = None
+    
     for t in VERIFICATION_TASKS:
-        task_results.append({
-            "id": t["id"],
-            "name": t["name"],
-            "prompt": t["prompt"],
-            "expected": t["expected"],
-            "status": "PASS",
-        })
-        print(f"    ✓ [{t['name']}]: Target '{t['expected']}' verified.")
+        if not dry_run and engine:
+            try:
+                prompt = t["prompt"]
+                response_text = ""
+                for token in engine.generate(
+                    prompt=prompt,
+                    max_tokens=128,
+                    temperature=0.1,
+                    top_p=0.95,
+                    top_k=40,
+                    repeat_penalty=1.1,
+                    stream=True,
+                ):
+                    if isinstance(token, str):
+                        response_text += token
+                
+                expected_lower = t["expected"].lower()
+                passed = expected_lower in response_text.lower()
+                status = "PASS" if passed else "FAIL"
+                
+                task_results.append({
+                    "id": t["id"],
+                    "name": t["name"],
+                    "prompt": t["prompt"],
+                    "expected": t["expected"],
+                    "status": status,
+                    "response": response_text[:500],
+                })
+                print(f"    [{status} - {t['name']}]: Target '{t['expected']}' {'verified' if passed else 'NOT found'}")
+            except Exception as e:
+                task_results.append({
+                    "id": t["id"],
+                    "name": t["name"],
+                    "prompt": t["prompt"],
+                    "expected": t["expected"],
+                    "status": "FAIL",
+                    "error": str(e),
+                })
+                print(f"    [FAIL - {t['name']}]: Error during inference: {e}")
+        else:
+            # Dry run mode - mark as SIMULATED
+            task_results.append({
+                "id": t["id"],
+                "name": t["name"],
+                "prompt": t["prompt"],
+                "expected": t["expected"],
+                "status": "SIMULATED",
+            })
+            print(f"    [SIMULATED - {t['name']}]: Dry run mode")
+
+    if not dry_run and engine:
+        engine.unload()
 
     # 3. Compile payload
     timestamp_slug = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%d_%H%M%SZ")

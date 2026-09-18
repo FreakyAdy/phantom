@@ -1,9 +1,13 @@
 """
-PHANTOM v2 — Conservative Adaptive Sparsity Gates
-=================================================
-Per-MLP sigmoid gate outputs sparse GEMM indices.
-Conservative 40% neuron skip threshold (Research Analysis: >60% causes overhead inversion).
-Gate precision must be ≥ 85% before enabling in production.
+PHANTOM v2 — Adaptive Sparsity Gates (RESEARCH PLACEHOLDER)
+===========================================================
+Per-MLP sigmoid gate predicting sparse GEMM indices.
+
+⚠️ RESEARCH PLACEHOLDER: This module simulates sparsity gating but does NOT implement
+true sparse GEMM kernels. The mask is computed but dense matmuls are still executed.
+Real compute savings require custom sparse kernels (e.g., CUTLASS, cuSPARSE, or Triton).
+
+Gate precision must be ≥ 85% before enabling in production (validated on real data).
 """
 
 from __future__ import annotations
@@ -18,12 +22,12 @@ import torch.nn.functional as F
 
 @dataclass
 class SparsityReport:
-    """Telemetry from adaptive sparsity execution."""
+    """Telemetry from adaptive sparsity execution (simulated)."""
     sparsity_fraction: float = 0.0
     neurons_skipped: int = 0
     neurons_total: int = 0
     gate_precision: float = 0.0
-    mlp_speedup_estimate: float = 1.0
+    mlp_speedup_estimate: float = 1.0  # Placeholder; no real sparse GEMM
 
 
 class AdaptiveSparsityGate(nn.Module):
@@ -31,7 +35,11 @@ class AdaptiveSparsityGate(nn.Module):
     Per-MLP sigmoid gate predicting active neurons.
 
     Outputs binary mask over intermediate_dim neurons; inactive neurons
-    are skipped during GEMM (sparse path).
+    would be skipped during GEMM (sparse path).
+
+    ⚠️ This is a SIMULATION ONLY. The mask is computed but dense F.linear
+    matmuls are still executed in apply_sparse_ffn() because true sparse
+    GEMM kernels are not implemented in this codebase.
     """
 
     def __init__(
@@ -77,12 +85,15 @@ class AdaptiveSparsityGate(nn.Module):
         neurons_skipped = int((~active_mask).sum().item())
         sparsity_frac = neurons_skipped / max(1, neurons_total)
 
+        # Gate precision MUST be computed on real validation data, not hardcoded
+        # Set to 0.0 here to indicate "unvalidated" — production code must
+        # override with measured precision before enabling sparsity
         report = SparsityReport(
             sparsity_fraction=sparsity_frac,
             neurons_skipped=neurons_skipped,
             neurons_total=neurons_total,
-            gate_precision=0.88,  # conservative default; validated offline
-            mlp_speedup_estimate=1.0 / max(0.01, 1.0 - sparsity_frac * 0.7),
+            gate_precision=0.0,  # UNVALIDATED — requires real data measurement
+            mlp_speedup_estimate=1.0,  # No real sparse GEMM → no speedup
         )
         return active_mask, report
 
@@ -92,10 +103,12 @@ class AdaptiveSparsityGate(nn.Module):
         w1: torch.Tensor,
         w2: torch.Tensor,
     ) -> Tuple[torch.Tensor, SparsityReport]:
-        """Apply sparse FFN using gate mask."""
+        """Apply sparse FFN using gate mask (SIMULATION - dense matmuls executed)."""
         active_mask, report = self.forward(hidden_state)
 
-        if report.gate_precision < self.min_gate_precision:
+        # ⚠️ SIMULATION: Always executes dense matmuls.
+        # Real sparse GEMM would skip inactive neurons at kernel level.
+        if report.gate_precision < self.min_gate_precision or report.gate_precision == 0.0:
             hidden = F.gelu(F.linear(hidden_state, w1))
             return F.linear(hidden, w2), report
 

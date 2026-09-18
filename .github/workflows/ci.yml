@@ -32,6 +32,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install torch --index-url https://download.pytorch.org/whl/cpu
           pip install numpy pytest fastapi uvicorn httpx structlog pillow rich pyyaml psutil
+          pip install llama-cpp-python
           pip install -e python/
 
       - name: Run Numerical Reference Parity Gate (CPU)
@@ -53,3 +54,38 @@ jobs:
           python -m pytest tests/unit/
         env:
           PYTHONPATH: python
+
+  real-benchmark-gate:
+    name: Real Benchmark Gate (ubuntu-latest - Py 3.11)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install Python Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install numpy pytest fastapi uvicorn httpx structlog pillow rich pyyaml psutil
+          pip install llama-cpp-python
+          pip install -e python/
+
+      - name: Run Real Inference Benchmark (SmolLM-135M)
+        run: |
+          python benchmarks/run_real.py --n-iter 5
+        env:
+          PYTHONPATH: python
+        timeout-minutes: 30
+
+      - name: Upload Benchmark Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results
+          path: benchmarks/results/latest.json

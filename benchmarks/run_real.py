@@ -1,24 +1,19 @@
 """
-PHANTOM Master Benchmark Suite Runner
-=====================================
-Executes all core benchmarks adhering strictly to PHANTOM Remediation Brief Phase 2:
-  - N >= 10 iterations after warmup
-  - Reporting mean, stddev, min, max, p50, p95
-  - Inclusion of baseline ablations (feature ON vs OFF)
-  - Explicit declaration of "proves" and "does_not_prove"
-  - Emits into benchmarks/results/latest.json and archive history
+PHANTOM Real Inference Benchmark
+=================================
+Authoritative benchmark using llama.cpp backend for real token/s measurements.
+Replaces fabricated benchmarks in run_all.py.
 """
 
 from __future__ import annotations
 
 import datetime
 import json
-import math
 import os
 import sys
 import time
 from pathlib import Path
-from typing import Any, Callable, Dict, List
+from typing import Any, Dict, List
 
 import numpy as np
 
@@ -29,7 +24,6 @@ if sys.platform == "win32":
     except Exception:
         pass
 
-# Ensure phantom package and repo root are importable
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "python"))
 sys.path.insert(0, str(REPO_ROOT))
@@ -52,36 +46,47 @@ def compute_statistics(samples: List[float]) -> Dict[str, float]:
     }
 
 
-def benchmark_llama_cpp_inference(n: int = 10) -> Dict[str, Any]:
-    """
-    Real llama.cpp inference benchmark on a small model (SmolLM2-135M).
-    Measures actual token throughput, TTFT, and VRAM usage.
-    """
-    print("  [BENCHMARK] llama_cpp_inference (SmolLM2-135M)...")
+def benchmark_real_inference(
+    model_id: str = "smollm-135m",
+    n_gpu_layers: int = 999,
+    n_iter: int = 10,
+    max_tokens: int = 64,
+) -> Dict[str, Any]:
+    """Real inference benchmark using llama.cpp backend."""
+    print(f"  [REAL BENCHMARK] {model_id} (n_gpu_layers={n_gpu_layers})")
     
     tok_sec_samples: List[float] = []
     ttft_ms_samples: List[float] = []
     vram_gb_samples: List[float] = []
 
     engine = create_engine_for_model(
-        model_id="smollm-135m",
-        n_gpu_layers=999,
+        model_id=model_id,
+        n_gpu_layers=n_gpu_layers,
         n_ctx=4096,
         n_batch=512,
     )
     engine.load()
 
     # Warmup
+    print(f"    Warming up...")
     for _ in range(3):
-        _ = list(engine.generate("Test prompt", max_tokens=16, temperature=0.0, stream=True))
+        _ = list(engine.generate("Test prompt for warmup.", max_tokens=16, temperature=0.0, stream=True))
 
-    for i in range(n):
-        prompt = f"Write a short sentence about topic {i}."
+    prompts = [
+        "Write a short sentence about topic {}.",
+        "Explain the concept of {} in one sentence.",
+        "What is {}? Give a brief answer.",
+        "Describe {} concisely.",
+        "Summarize {} in 20 words.",
+    ]
+
+    for i in range(n_iter):
+        prompt = prompts[i % len(prompts)].format(i)
         start = time.perf_counter()
         first_token_time = None
         token_count = 0
 
-        for token in engine.generate(prompt, max_tokens=64, temperature=0.0, stream=True):
+        for token in engine.generate(prompt, max_tokens=max_tokens, temperature=0.0, stream=True):
             if first_token_time is None:
                 first_token_time = time.perf_counter()
             if isinstance(token, str) and token:
@@ -103,51 +108,47 @@ def benchmark_llama_cpp_inference(n: int = 10) -> Dict[str, Any]:
         except Exception:
             pass
 
+        print(f"    Iter {i+1}/{n_iter}: {tok_sec:.2f} tok/s, TTFT={ttft_ms:.1f}ms" if first_token_time else f"    Iter {i+1}/{n_iter}: {tok_sec:.2f} tok/s")
+
     engine.unload()
 
     if not tok_sec_samples:
         return {"error": "No samples collected"}
 
     return {
-        "benchmark": "llama_cpp_inference",
+        "benchmark": "real_inference",
         "status": "REAL_MEASUREMENT",
-        "model": "SmolLM2-135M-Instruct (Q4_K_M)",
+        "model": model_id,
+        "n_gpu_layers": n_gpu_layers,
         "throughput_tok_sec": compute_statistics(tok_sec_samples),
         "ttft_ms": compute_statistics(ttft_ms_samples),
         "vram_used_gb": compute_statistics(vram_gb_samples) if vram_gb_samples else {},
-        "proves": "llama.cpp backend executes real inference with measurable throughput on GPU.",
+        "proves": f"llama.cpp backend executes real inference with measurable throughput on {model_id}.",
         "does_not_prove": "Does not prove performance on larger models without direct measurement.",
     }
 
 
 def benchmark_cpu_gemm_amortization(n: int = 10) -> Dict[str, Any]:
-    """
-    CPU GEMM vs GEMV Amortization Benchmark (Real Measurement)
-    Validates the 4.32x amortization factor from bench_gemm_vs_gemv.py.
-    """
-    print("  [BENCHMARK] cpu_gemm_amortization...")
+    """Real CPU GEMM vs GEMV amortization benchmark."""
+    print("  [REAL BENCHMARK] cpu_gemm_amortization...")
     
     import torch
     
-    # Qwen-32B MLP dimensions
     D = 5120
     F = 27648
     
-    # Create weight matrix and input vectors
     W = torch.randn(F, D, dtype=torch.float32)
-    x_batch = torch.randn(8, D, dtype=torch.float32)  # batch=8
+    x_batch = torch.randn(8, D, dtype=torch.float32)
     x_single = torch.randn(1, D, dtype=torch.float32)
 
     gemv_times: List[float] = []
     gemm_times: List[float] = []
 
     for i in range(n):
-        # GEMV (batch=1)
         t0 = time.perf_counter()
         _ = x_single @ W.T
         gemv_times.append((time.perf_counter() - t0) * 1000)
 
-        # GEMM (batch=8)
         t0 = time.perf_counter()
         _ = x_batch @ W.T
         gemm_times.append((time.perf_counter() - t0) * 1000)
@@ -169,10 +170,8 @@ def benchmark_cpu_gemm_amortization(n: int = 10) -> Dict[str, Any]:
 
 
 def benchmark_nvme_tile_io(n: int = 10) -> Dict[str, Any]:
-    """
-    Real NVMe tile I/O benchmark (from phantom_pages).
-    """
-    print("  [BENCHMARK] nvme_tile_io...")
+    """Real NVMe tile I/O benchmark."""
+    print("  [REAL BENCHMARK] nvme_tile_io...")
     
     test_dir = Path.home() / ".phantom" / "_sustained_bench"
     test_dir.mkdir(parents=True, exist_ok=True)
@@ -197,7 +196,6 @@ def benchmark_nvme_tile_io(n: int = 10) -> Dict[str, Any]:
 
     tile_file.unlink(missing_ok=True)
 
-    # Double-buffered async pipeline benchmark
     try:
         from phantom.instrumentation.nvme_pipeline import AsyncTilePagingEngine
         pipe_file = test_dir / "pipe_tile_64mb.bin"
@@ -222,11 +220,9 @@ def benchmark_nvme_tile_io(n: int = 10) -> Dict[str, Any]:
     }
 
 
-def benchmark_memory_bandwidth(n: int = 10) -> Dict[str, float]:
-    """
-    Real DDR5 memory bandwidth measurement.
-    """
-    print("  [BENCHMARK] memory_bandwidth...")
+def benchmark_memory_bandwidth(n: int = 10) -> Dict[str, Any]:
+    """Real DDR5 memory bandwidth measurement."""
+    print("  [REAL BENCHMARK] memory_bandwidth...")
     
     size = 4 * 1024 * 1024 * 1024  # 4 GB
     a = np.random.randn(size // 8).astype(np.float64)
@@ -252,60 +248,10 @@ def benchmark_memory_bandwidth(n: int = 10) -> Dict[str, float]:
     }
 
 
-def benchmark_planner_validation() -> Dict[str, Any]:
-    """
-    Capacity Planner Validation Benchmark
-    Compares predicted vs physically measured tok/sec on real runs and reports prediction error.
-    """
-    print("  [BENCHMARK] planner_validation...")
-    
-    models_validated = [
-        {
-            "model": "SmolLM2-135M-Instruct",
-            "tier": "100% VRAM Resident",
-            "predicted_tok_s": 350.0,
-            "measured_tok_s": 366.5,
-            "error_pct": 4.5,
-        },
-        {
-            "model": "Qwen3-30B-A3B (MoE)",
-            "tier": "Hybrid VRAM + RAM",
-            "predicted_tok_s": 12.8,
-            "measured_tok_s": 12.95,
-            "error_pct": 1.2,
-        },
-        {
-            "model": "Qwen2.5-Coder-32B (Dense)",
-            "tier": "Hybrid VRAM + DDR5 RAM",
-            "predicted_tok_s": 2.95,
-            "measured_tok_s": 2.88,
-            "error_pct": 2.4,
-        },
-        {
-            "model": "Llama-3-70B-Instruct",
-            "tier": "3-Tier VRAM + RAM + NVMe",
-            "predicted_tok_s": 0.38,
-            "measured_tok_s": 0.39,
-            "error_pct": 2.6,
-        },
-    ]
-
-    mean_error = float(np.mean([m["error_pct"] for m in models_validated]))
-
-    return {
-        "benchmark": "planner_validation",
-        "status": "DERIVED_FROM_MEASUREMENTS",
-        "models": models_validated,
-        "mean_prediction_error_pct": round(mean_error, 2),
-        "proves": f"phantom plan models the hardware bandwidth wall accurately within {mean_error:.1f}% mean error across 135M to 70B models.",
-        "does_not_prove": "Does not prove exact inference speeds on uncharacterized hardware architectures or multi-GPU interconnects.",
-    }
-
-
-def run_master_benchmark_suite(n_iter: int = 10) -> Dict[str, Any]:
-    """Run all Phase 2 benchmarks and generate canonical latest.json."""
+def run_real_benchmark_suite(n_iter: int = 10) -> Dict[str, Any]:
+    """Run all real benchmarks and generate canonical latest.json."""
     print("=" * 80)
-    print("  PHANTOM MASTER BENCHMARK SUITE (GROUND TRUTH REMEDIATION PHASE 2)")
+    print("  PHANTOM REAL BENCHMARK SUITE (GROUND TRUTH)")
     print("=" * 80)
     print(f"  Iterations per benchmark: N = {n_iter} (after warmup)")
     print("  Emitting to: benchmarks/results/latest.json\n")
@@ -313,12 +259,21 @@ def run_master_benchmark_suite(n_iter: int = 10) -> Dict[str, Any]:
     fingerprint = get_environment_fingerprint()
 
     benchmarks_data = {
-        "llama_cpp_inference": benchmark_llama_cpp_inference(n=n_iter),
+        "real_inference_smolLM": benchmark_real_inference("smollm-135m", n_gpu_layers=999, n_iter=n_iter),
         "cpu_gemm_amortization": benchmark_cpu_gemm_amortization(n=n_iter),
         "nvme_tile_io": benchmark_nvme_tile_io(n=n_iter),
         "memory_bandwidth": benchmark_memory_bandwidth(n=n_iter),
-        "planner_validation": benchmark_planner_validation(),
     }
+
+    # Try larger model if VRAM allows
+    try:
+        import torch
+        if torch.cuda.is_available() and torch.cuda.get_device_properties(0).total_memory > 6 * 1024**3:
+            benchmarks_data["real_inference_qwen_32b"] = benchmark_real_inference(
+                "qwen2.5-coder-32b", n_gpu_layers=14, n_iter=min(n_iter, 5), max_tokens=32
+            )
+    except Exception:
+        pass
 
     result_payload = {
         "generated_at_utc": datetime.datetime.now(datetime.timezone.utc).isoformat(),
@@ -375,4 +330,4 @@ def run_master_benchmark_suite(n_iter: int = 10) -> Dict[str, Any]:
 
 
 if __name__ == "__main__":
-    run_master_benchmark_suite(n_iter=10)
+    run_real_benchmark_suite(n_iter=10)

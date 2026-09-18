@@ -41,16 +41,21 @@ class KernelDispatch:
         k_weight: torch.Tensor,
         v_weight: torch.Tensor,
         rope_freqs: Optional[torch.Tensor] = None,
+        scale_q: float = 1.0,
+        scale_k: float = 1.0,
+        scale_v: float = 1.0,
     ) -> torch.Tensor:
         if self.fusion_enabled:
             self.fusion_calls += 1
             return fused_attention(
                 input_act, q_weight, k_weight, v_weight, rope_freqs,
+                scale_q=scale_q, scale_k=scale_k, scale_v=scale_v,
                 use_triton=self.use_triton,
             )
         self.fallback_calls += 1
         return fused_attention_reference(
             input_act, q_weight, k_weight, v_weight, rope_freqs,
+            scale_q=scale_q, scale_k=scale_k, scale_v=scale_v,
         )
 
     def ffn(
@@ -58,12 +63,14 @@ class KernelDispatch:
         input_act: torch.Tensor,
         w1_weight: torch.Tensor,
         w2_weight: torch.Tensor,
+        scale_w1: float = 1.0,
+        scale_w2: float = 1.0,
     ) -> torch.Tensor:
         if self.fusion_enabled:
             self.fusion_calls += 1
-            return fused_ffn(input_act, w1_weight, w2_weight, use_triton=self.use_triton)
+            return fused_ffn(input_act, w1_weight, w2_weight, scale_w1=scale_w1, scale_w2=scale_w2, use_triton=self.use_triton)
         self.fallback_calls += 1
-        return fused_ffn_reference(input_act, w1_weight, w2_weight)
+        return fused_ffn_reference(input_act, w1_weight, w2_weight, scale_w1=scale_w1, scale_w2=scale_w2)
 
     @property
     def stats(self) -> dict:

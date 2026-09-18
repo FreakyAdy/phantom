@@ -1,10 +1,12 @@
 """
 PHANTOM v2 — EAGLE-3 Feature-Fusion Draft Heads
-=================================================
+===============================================
 Lightweight draft prediction heads attached to the target model.
-Fuses hidden states from layers [0, 30, 60, 79] to predict K=5 tokens ahead.
+Fuses hidden states from configurable layers (default [0, 30, 60, 79] for 80-layer models)
+to predict K=5 tokens ahead.
 
-Memory: ~3M params, ~50 MB FP16 — fits in 6 GB VRAM alongside target GPU layers.
+Memory: ~950M params (~1.9 GB FP16) for default config (4 fusion layers, hidden=5120, vocab=32000, k=5).
+For 64-layer models, configure fusion_layers=[0, 15, 31, 47] to avoid missing h79.
 """
 
 from __future__ import annotations
@@ -61,13 +63,15 @@ class EagleHeads(nn.Module):
         self,
         features: Dict[str, torch.Tensor],
     ) -> torch.Tensor:
-        """Concatenate and fuse hidden states from fusion layers."""
+        """Concatenate and fuse hidden states from fusion layers. Gracefully handles missing layers."""
         tensors = []
+        available_layers = []
         for layer_idx in self.fusion_layers:
             key = f"h{layer_idx}"
             h = features.get(key)
             if h is None:
-                raise KeyError(f"Missing feature '{key}' for EAGLE fusion")
+                # Skip missing layer (e.g., h79 on 64-layer model)
+                continue
             if h.dim() == 3:
                 h = h[:, -1, :]  # last token position
             h = h.to(self.fusion_layer_0.weight.device)
@@ -77,6 +81,10 @@ class EagleHeads(nn.Module):
             elif h.shape[-1] > self.hidden_dim:
                 h = h[..., : self.hidden_dim]
             tensors.append(h)
+            available_layers.append(layer_idx)
+
+        if not tensors:
+            raise ValueError("No fusion layer features available for EAGLE heads")
 
         concat = torch.cat(tensors, dim=-1)
         fused = self.fusion_layer_1(F.silu(self.fusion_layer_0(concat)))

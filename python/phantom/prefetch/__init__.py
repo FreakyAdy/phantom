@@ -1,5 +1,21 @@
 """PHANTOM v2 adaptive prefetch subsystem."""
 
-from phantom.prefetch.wraith_v2 import AdaptivePrefetchScheduler, WraithV2Predictor
+from phantom.prefetch.wraith_v2 import (
+    AdaptivePrefetchScheduler,
+    WraithV2Predictor,
+    MoEExpertAwarePrefetcher,
+    MoEExpertTracker,
+    OSLevelPrefetcher,
+    create_prefetcher_for_model,
+    PrefetchMetrics,
+)
 
-__all__ = ["WraithV2Predictor", "AdaptivePrefetchScheduler"]
+__all__ = [
+    "WraithV2Predictor",
+    "AdaptivePrefetchScheduler",
+    "MoEExpertAwarePrefetcher",
+    "MoEExpertTracker",
+    "OSLevelPrefetcher",
+    "create_prefetcher_for_model",
+    "PrefetchMetrics",
+]

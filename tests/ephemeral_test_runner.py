@@ -39,6 +39,7 @@ from phantom.model_profiles.hardware_simulator import (
     resolve_model_spec,
     simulate_model_execution,
 )
+from phantom.runtime import create_engine_for_model
 
 
 MODEL_REGISTRY: Dict[str, Dict[str, Any]] = {
@@ -73,8 +74,8 @@ MODEL_REGISTRY: Dict[str, Dict[str, Any]] = {
         "size_gb": 19.85,
     },
     "qwen3-30b-a3b": {
-        "repo": "bartowski/Qwen2.5-Coder-32B-Instruct-GGUF",
-        "file": "Qwen2.5-Coder-32B-Instruct-Q4_K_M.gguf",  # Proxy reference
+        "repo": "bartowski/Qwen3-30B-A3B-Instruct-GGUF",
+        "file": "Qwen3-30B-A3B-Instruct-Q4_K_M.gguf",
         "size_gb": 17.50,
     },
     "llama-3-70b": {
@@ -209,19 +210,54 @@ def run_ephemeral_test(
 
         # 5. Run verification battery
         print("--- Step 3: Executing Non-Synthetic Verification Battery ---")
+        
+        # Load model via llama.cpp backend for real inference
+        engine = create_engine_for_model(
+            model_id=model_id,
+            n_gpu_layers=min(14, hw.vram_gb * 2),  # heuristic: ~2GB VRAM per layer
+            n_ctx=4096,
+            n_batch=512,
+        )
+        engine.load()
+
         for test in TEST_BATTERY:
             print(f"Running {test['name']}...")
             t0 = time.time()
-            # Placeholder for inference dispatch:
+            
+            # Run real inference via llama.cpp
+            prompt = test["prompt"]
+            response_text = ""
+            for token in engine.generate(
+                prompt=prompt,
+                max_tokens=128,
+                temperature=0.1,
+                top_p=0.95,
+                top_k=40,
+                repeat_penalty=1.1,
+                stream=True,
+            ):
+                if isinstance(token, str):
+                    response_text += token
+            
             elapsed = time.time() - t0
-            passed = True
+            
+            # Check if target is in response (case-insensitive substring match)
+            target_lower = test["target"].lower()
+            passed = target_lower in response_text.lower()
+            
             results["execution"].append({
                 "test_id": test["id"],
                 "name": test["name"],
                 "status": "PASS" if passed else "FAIL",
                 "target_verified": test["target"],
+                "response": response_text[:500],
+                "elapsed_sec": elapsed,
             })
-            print(f"  ✓ [PASS - Verified target: {test['target']}]")
+            
+            status_str = "PASS" if passed else "FAIL"
+            print(f"  [{status_str} - Target: {test['target']}] Response: {response_text[:100]}...")
+
+        engine.unload()
 
         print("\n✓ All test battery tasks completed successfully.")
 

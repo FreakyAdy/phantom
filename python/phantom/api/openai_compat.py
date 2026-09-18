@@ -11,9 +11,7 @@ Implements:
     GET  /v1/metrics             — PHANTOM CORE performance metrics (extension)
     WebSocket /v1/stream         — Real-time token streaming
 
-All model communication goes through IPC to the Rust core.
-Server handles concurrent requests via asyncio + request queue.
-Max concurrent generations: configurable (default 1 for laptop, 3 for desktop).
+Now uses llama.cpp backend for real inference.
 """
 
 from __future__ import annotations
@@ -21,7 +19,6 @@ from __future__ import annotations
 import asyncio
 import json
 import os
-import struct
 import time
 import uuid
 from contextlib import asynccontextmanager
@@ -33,16 +30,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, JSONResponse
 from pydantic import BaseModel, Field
 
+from phantom.runtime import create_engine_for_model
+
 logger = structlog.get_logger(__name__)
 
-# ─────────────────────────────────────────────────────────────────────────────
-# IPC Configuration
-# ─────────────────────────────────────────────────────────────────────────────
+# Global engine cache
+_engine_cache: Dict[str, Any] = {}
 
-if os.name == "nt":
-    IPC_PATH = r"\\.\pipe\phantom_core_ipc"
-else:
-    IPC_PATH = "/tmp/phantom_core.sock"
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Request/Response models (OpenAI-compatible)
@@ -134,194 +128,43 @@ class PhantomMetrics(BaseModel):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# IPC Client
+# Engine management
 # ─────────────────────────────────────────────────────────────────────────────
 
-class PhantomIPCClient:
-    """
-    Async IPC client for communicating with the Rust core engine.
-
-    Uses Unix sockets (Linux/macOS) or Named Pipes (Windows).
-    Messages are framed with 4-byte little-endian length prefix + MessagePack body.
-    """
-
-    def __init__(self, ipc_path: str = IPC_PATH):
-        self.ipc_path = ipc_path
-        self._reader: Optional[asyncio.StreamReader] = None
-        self._writer: Optional[asyncio.StreamWriter] = None
-        self._lock = asyncio.Lock()
-        self._connected = False
-
-    async def connect(self) -> None:
-        """Connect to the Rust IPC server."""
+def _get_engine(model_id: str):
+    """Get or create llama.cpp engine for model."""
+    if model_id not in _engine_cache:
         try:
-            if os.name == "nt":
-                # Windows named pipe
-                self._reader, self._writer = await asyncio.open_connection(
-                    host="127.0.0.1", port=8081  # Fallback TCP for Windows
-                )
-            else:
-                self._reader, self._writer = await asyncio.open_unix_connection(self.ipc_path)
-            self._connected = True
-            logger.info("ipc_connected", path=self.ipc_path)
+            engine = create_engine_for_model(
+                model_id=model_id,
+                n_gpu_layers=14,
+                n_ctx=4096,
+                n_batch=512,
+            )
+            engine.load()
+            _engine_cache[model_id] = engine
         except Exception as e:
-            self._connected = False
-            logger.debug("ipc_connect_failed_using_engine_fallback", error=str(e))
-
-    async def disconnect(self) -> None:
-        """Close the IPC connection."""
-        if self._writer:
-            try:
-                self._writer.close()
-                await self._writer.wait_closed()
-            except Exception:
-                pass
-        self._connected = False
-
-    async def send_request(self, request: dict) -> dict:
-        """
-        Send a request dict and receive a response dict via IPC.
-
-        Uses 4-byte LE length prefix framing with JSON encoding.
-
-        Args:
-            request: Request dict (e.g. {"type": "generate", "prompt": "..."}).
-
-        Returns:
-            Response dict from Rust core.
-        """
-        if not self._connected:
-            await self.connect()
-
-        if not self._connected:
-            # Return mock response when Rust core is not running
-            return self._mock_response(request)
-
-        async with self._lock:
-            try:
-                body = json.dumps(request).encode()
-                length = struct.pack("<I", len(body))
-                self._writer.write(length + body)
-                await self._writer.drain()
-
-                # Read response
-                len_bytes = await asyncio.wait_for(
-                    self._reader.readexactly(4), timeout=30.0
-                )
-                resp_len = struct.unpack("<I", len_bytes)[0]
-                resp_bytes = await asyncio.wait_for(
-                    self._reader.readexactly(resp_len), timeout=120.0
-                )
-                return json.loads(resp_bytes)
-
-            except Exception as e:
-                logger.error("ipc_send_failed", error=str(e))
-                self._connected = False
-                return self._mock_response(request)
-
-    async def stream_generate(
-        self,
-        request: dict,
-    ) -> AsyncGenerator[str, None]:
-        """
-        Stream token generation via IPC.
-
-        Yields token strings as they are generated by the Rust core.
-        """
-        if not self._connected:
-            await self.connect()
-
-        if not self._connected:
-            # Mock streaming when Rust core is not running
-            async for token in self._mock_stream(request):
-                yield token
-            return
-
-        request["stream"] = True
-        body = json.dumps(request).encode()
-        length = struct.pack("<I", len(body))
-
-        try:
-            self._writer.write(length + body)
-            await self._writer.drain()
-
-            # Stream tokens until EOS
-            while True:
-                len_bytes = await asyncio.wait_for(
-                    self._reader.readexactly(4), timeout=60.0
-                )
-                chunk_len = struct.unpack("<I", len_bytes)[0]
-                chunk_bytes = await asyncio.wait_for(
-                    self._reader.readexactly(chunk_len), timeout=60.0
-                )
-                chunk = json.loads(chunk_bytes)
-
-                token = chunk.get("token", "")
-                done = chunk.get("done", False)
-
-                if token:
-                    yield token
-
-                if done:
-                    break
-
-        except asyncio.TimeoutError:
-            logger.warning("ipc_stream_timeout")
-            yield "\n[PHANTOM CORE: Stream timeout]"
-        except Exception as e:
-            logger.error("ipc_stream_error", error=str(e))
-            yield f"\n[PHANTOM CORE Error: {e}]"
-
-    def _mock_response(self, request: dict) -> dict:
-        """Generate a mock response when Rust core is unavailable."""
-        prompt = request.get("prompt", request.get("messages", [{}])[-1].get("content", ""))
-        return {
-            "text": f"[PHANTOM CORE — Rust core not running. Prompt received: '{str(prompt)[:100]}']",
-            "tokens_generated": 20,
-            "tok_per_sec": 0.0,
-        }
-
-    async def _mock_stream(self, request: dict) -> AsyncGenerator[str, None]:
-        """Mock streaming for when Rust core is unavailable."""
-        tokens = [
-            "[PHANTOM", " CORE]", " Rust", " core", " not", " running.",
-            " Start", " with:", " `phantom-core", " serve`"
-        ]
-        for token in tokens:
-            await asyncio.sleep(0.05)
-            yield token
-
-    async def get_metrics(self) -> dict:
-        """Get live metrics from the Rust core."""
-        try:
-            return await self.send_request({"type": "metrics"})
-        except Exception:
-            return _default_metrics()
-
-    async def get_models(self) -> list:
-        """Get list of loaded models."""
-        try:
-            resp = await self.send_request({"type": "list_models"})
-            return resp.get("models", [])
-        except Exception:
-            return []
+            raise HTTPException(status_code=503, detail=f"Failed to load model {model_id}: {e}")
+    return _engine_cache[model_id]
 
 
-def _default_metrics() -> dict:
-    """Return default metrics when Rust core is unavailable."""
-    return {
-        "vram_mb": 0.0,
-        "vram_total_mb": 0.0,
-        "ram_mb": 0.0,
-        "nvme_mb": 0.0,
-        "layer_residency": {"vram": [], "ram": [], "nvme": []},
-        "wraith_accuracy_pct": 0.0,
-        "kv_compression_ratio": 0.0,
-        "active_sparsity_pct": 0.0,
-        "tok_per_sec": 0.0,
-        "thermal_state": "unknown",
-        "throttle_active": False,
-    }
+def _format_chat_prompt(messages: List[Message]) -> str:
+    """Format chat messages into a single prompt string."""
+    parts = []
+    for msg in messages:
+        if msg.role == "system":
+            parts.append(f"<|system|>\n{msg.content} ")
+        elif msg.role == "user":
+            parts.append(f"<|user|>\n{msg.content} ")
+        elif msg.role == "assistant":
+            parts.append(f"<|assistant|>\n{msg.content} ")
+    parts.append("<|assistant|>")
+    return "\n".join(parts)
+
+
+def _estimate_tokens(text: str) -> int:
+    """Quick token count estimate (4 chars ≈ 1 token)."""
+    return max(1, len(text) // 4)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -330,7 +173,6 @@ def _default_metrics() -> dict:
 
 class AppState:
     def __init__(self):
-        self.ipc_client = PhantomIPCClient()
         self.start_time = time.time()
         self.total_requests = 0
         self.active_requests = 0
@@ -351,18 +193,15 @@ app_state = AppState()
 async def lifespan(app: FastAPI):
     """Application startup and shutdown."""
     logger.info("phantom_api_starting")
-    await app_state.ipc_client.connect()
-
-    # Try to get loaded models
-    try:
-        app_state.loaded_models = await app_state.ipc_client.get_models()
-    except Exception:
-        app_state.loaded_models = ["phantom-core-model"]
-
     yield  # App running
-
+    # Cleanup engines
+    for engine in _engine_cache.values():
+        try:
+            engine.unload()
+        except Exception:
+            pass
+    _engine_cache.clear()
     logger.info("phantom_api_shutdown")
-    await app_state.ipc_client.disconnect()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -386,29 +225,6 @@ app.add_middleware(
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Helper: format prompt from messages
-# ─────────────────────────────────────────────────────────────────────────────
-
-def _format_chat_prompt(messages: List[Message]) -> str:
-    """Format chat messages into a single prompt string."""
-    parts = []
-    for msg in messages:
-        if msg.role == "system":
-            parts.append(f"<|system|>\n{msg.content}</s>")
-        elif msg.role == "user":
-            parts.append(f"<|user|>\n{msg.content}</s>")
-        elif msg.role == "assistant":
-            parts.append(f"<|assistant|>\n{msg.content}</s>")
-    parts.append("<|assistant|>")
-    return "\n".join(parts)
-
-
-def _estimate_tokens(text: str) -> int:
-    """Quick token count estimate (4 chars ≈ 1 token)."""
-    return max(1, len(text) // 4)
-
-
-# ─────────────────────────────────────────────────────────────────────────────
 # Endpoints
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -418,17 +234,17 @@ async def health_check():
     uptime = time.time() - app_state.start_time
     return {
         "status": "ok",
-        "engine": "PHANTOM CORE",
+        "engine": "PHANTOM CORE (llama.cpp backend)",
         "uptime_sec": round(uptime, 1),
-        "ipc_connected": app_state.ipc_client._connected,
         "active_requests": app_state.active_requests,
+        "loaded_models": list(_engine_cache.keys()),
     }
 
 
 @app.get("/v1/models")
 async def list_models():
     """List available models. OpenAI-compatible response."""
-    models = app_state.loaded_models or ["phantom-core-model"]
+    models = list(_engine_cache.keys()) or ["phantom-core-model"]
     return {
         "object": "list",
         "data": [
@@ -450,26 +266,35 @@ async def list_models():
 async def get_metrics():
     """
     PHANTOM CORE extension endpoint — returns live engine performance metrics.
-
-    Returns:
-        PhantomMetrics with VRAM/RAM/NVMe usage, Wraith accuracy,
-        KV compression ratio, sparsity %, tok/sec, and thermal state.
     """
-    raw = await app_state.ipc_client.get_metrics()
+    # Aggregate metrics from all loaded engines
+    total_vram = 0.0
+    total_ram = 0.0
+    total_weight = 0
+    total_tok_sec = 0.0
+    model_count = len(_engine_cache)
+
+    for engine in _engine_cache.values():
+        metrics = engine.get_metrics()
+        total_vram += metrics.vram_used_gb * 1024
+        total_ram += metrics.ram_used_gb * 1024
+        total_weight += metrics.total_weight_bytes
+        total_tok_sec += metrics.tokens_per_second
+
     uptime = time.time() - app_state.start_time
 
     return PhantomMetrics(
-        vram_mb=raw.get("vram_mb", 0.0),
-        vram_total_mb=raw.get("vram_total_mb", 0.0),
-        ram_mb=raw.get("ram_mb", 0.0),
-        nvme_mb=raw.get("nvme_mb", 0.0),
-        layer_residency=raw.get("layer_residency", {"vram": [], "ram": [], "nvme": []}),
-        wraith_accuracy_pct=raw.get("wraith_accuracy_pct", 0.0),
-        kv_compression_ratio=raw.get("kv_compression_ratio", 8.0),
-        active_sparsity_pct=raw.get("active_sparsity_pct", 0.0),
-        tok_per_sec=raw.get("tok_per_sec", 0.0),
-        thermal_state=raw.get("thermal_state", "nominal"),
-        throttle_active=raw.get("throttle_active", False),
+        vram_mb=total_vram,
+        vram_total_mb=total_vram,
+        ram_mb=total_ram,
+        nvme_mb=0.0,
+        layer_residency={"vram": [], "ram": [], "nvme": []},
+        wraith_accuracy_pct=0.0,
+        kv_compression_ratio=1.0,
+        active_sparsity_pct=0.0,
+        tok_per_sec=round(total_tok_sec, 2),
+        thermal_state="nominal",
+        throttle_active=False,
         uptime_sec=round(uptime, 1),
         total_requests=app_state.total_requests,
         active_requests=app_state.active_requests,
@@ -482,48 +307,55 @@ async def chat_completions(request: ChatCompletionRequest):
     OpenAI-compatible chat completions endpoint.
 
     Supports both streaming (stream=true) and non-streaming responses.
-    Forwards to Rust core via IPC with full sampling parameters.
+    Uses llama.cpp backend for real inference.
     """
     request_id = f"chatcmpl-{uuid.uuid4().hex[:12]}"
     created = int(time.time())
     prompt = _format_chat_prompt(request.messages)
     prompt_tokens = _estimate_tokens(prompt)
 
-    ipc_request = {
-        "type": "generate",
-        "request_id": request_id,
-        "prompt": prompt,
-        "max_tokens": request.max_tokens,
-        "temperature": request.temperature,
-        "top_p": request.top_p,
-        "top_k": request.top_k,
-        "repetition_penalty": request.repetition_penalty,
-        "stop_sequences": ([request.stop] if isinstance(request.stop, str) else request.stop) or [],
-    }
+    engine = _get_engine(request.model)
 
     app_state.total_requests += 1
+
+    temperature = request.temperature
+    top_p = request.top_p
+    top_k = request.top_k
+    repetition_penalty = request.repetition_penalty
+    stop_sequences = ([request.stop] if isinstance(request.stop, str) else request.stop) or []
 
     if request.stream:
         async def generate_stream() -> AsyncGenerator[bytes, None]:
             app_state.active_requests += 1
             completion_tokens = 0
+            start_time = time.time()
             try:
                 async with app_state.request_semaphore:
-                    async for token in app_state.ipc_client.stream_generate(ipc_request):
-                        completion_tokens += 1
-                        chunk = ChatCompletionChunk(
-                            id=request_id,
-                            created=created,
-                            model=request.model,
-                            choices=[
-                                ChatCompletionChunkChoice(
-                                    index=0,
-                                    delta=ChatCompletionChunkDelta(content=token),
-                                    finish_reason=None,
-                                )
-                            ],
-                        )
-                        yield f"data: {chunk.model_dump_json()}\n\n".encode()
+                    for token in engine.generate(
+                        prompt=prompt,
+                        max_tokens=request.max_tokens,
+                        temperature=temperature,
+                        top_p=top_p,
+                        top_k=top_k,
+                        repeat_penalty=repetition_penalty,
+                        stop=stop_sequences,
+                        stream=True,
+                    ):
+                        if isinstance(token, str) and token:
+                            completion_tokens += 1
+                            chunk = ChatCompletionChunk(
+                                id=request_id,
+                                created=created,
+                                model=request.model,
+                                choices=[
+                                    ChatCompletionChunkChoice(
+                                        index=0,
+                                        delta=ChatCompletionChunkDelta(content=token),
+                                        finish_reason=None,
+                                    )
+                                ],
+                            )
+                            yield f"data: {chunk.model_dump_json()}\n\n".encode()
 
                 # Final chunk with finish_reason
                 final_chunk = ChatCompletionChunk(
@@ -559,14 +391,27 @@ async def chat_completions(request: ChatCompletionRequest):
     else:
         # Non-streaming
         app_state.active_requests += 1
+        start_time = time.time()
         try:
             async with app_state.request_semaphore:
-                response = await app_state.ipc_client.send_request(ipc_request)
+                response_text = ""
+                for token in engine.generate(
+                    prompt=prompt,
+                    max_tokens=request.max_tokens,
+                    temperature=temperature,
+                    top_p=top_p,
+                    top_k=top_k,
+                    repeat_penalty=repetition_penalty,
+                    stop=stop_sequences,
+                    stream=True,
+                ):
+                    if isinstance(token, str):
+                        response_text += token
         finally:
             app_state.active_requests -= 1
 
-        generated_text = response.get("text", "")
-        completion_tokens = response.get("tokens_generated", _estimate_tokens(generated_text))
+        metrics = engine.get_metrics()
+        completion_tokens = metrics.total_tokens_generated
 
         return ChatCompletionResponse(
             id=request_id,
@@ -575,7 +420,7 @@ async def chat_completions(request: ChatCompletionRequest):
             choices=[
                 ChatCompletionChoice(
                     index=0,
-                    message=Message(role="assistant", content=generated_text),
+                    message=Message(role="assistant", content=response_text),
                     finish_reason="stop",
                 )
             ],
@@ -600,26 +445,28 @@ async def completions(request: CompletionRequest):
     prompt_text = request.prompt if isinstance(request.prompt, str) else request.prompt[0]
     prompt_tokens = _estimate_tokens(prompt_text)
 
-    ipc_request = {
-        "type": "generate",
-        "request_id": request_id,
-        "prompt": prompt_text,
-        "max_tokens": request.max_tokens,
-        "temperature": request.temperature,
-        "top_p": request.top_p,
-        "stop_sequences": ([request.stop] if isinstance(request.stop, str) else request.stop) or [],
-    }
+    engine = _get_engine(request.model)
 
     app_state.total_requests += 1
     app_state.active_requests += 1
+    start_time = time.time()
     try:
         async with app_state.request_semaphore:
-            response = await app_state.ipc_client.send_request(ipc_request)
+            response_text = ""
+            for token in engine.generate(
+                prompt=prompt_text,
+                max_tokens=request.max_tokens,
+                temperature=request.temperature,
+                top_p=request.top_p,
+                stream=True,
+            ):
+                if isinstance(token, str):
+                    response_text += token
     finally:
         app_state.active_requests -= 1
 
-    generated_text = response.get("text", "")
-    completion_tokens = response.get("tokens_generated", _estimate_tokens(generated_text))
+    metrics = engine.get_metrics()
+    completion_tokens = metrics.total_tokens_generated
 
     return {
         "id": request_id,
@@ -628,7 +475,7 @@ async def completions(request: CompletionRequest):
         "model": request.model,
         "choices": [
             {
-                "text": generated_text,
+                "text": response_text,
                 "index": 0,
                 "logprobs": None,
                 "finish_reason": "stop",
@@ -658,25 +505,26 @@ async def websocket_stream(websocket: WebSocket):
         while True:
             data = await websocket.receive_json()
             prompt = data.get("prompt", "")
+            model = data.get("model", "phantom-core-model")
             if not prompt:
                 await websocket.send_json({"error": "No prompt provided"})
                 continue
 
-            ipc_request = {
-                "type": "generate",
-                "prompt": prompt,
-                "max_tokens": data.get("max_tokens", 512),
-                "temperature": data.get("temperature", 0.7),
-                "top_p": data.get("top_p", 0.9),
-                "stream": True,
-            }
+            engine = _get_engine(model)
 
             app_state.total_requests += 1
             app_state.active_requests += 1
             try:
                 async with app_state.request_semaphore:
-                    async for token in app_state.ipc_client.stream_generate(ipc_request):
-                        await websocket.send_json({"token": token, "done": False})
+                    for token in engine.generate(
+                        prompt=prompt,
+                        max_tokens=data.get("max_tokens", 512),
+                        temperature=data.get("temperature", 0.7),
+                        top_p=data.get("top_p", 0.9),
+                        stream=True,
+                    ):
+                        if isinstance(token, str):
+                            await websocket.send_json({"token": token, "done": False})
 
                 await websocket.send_json({"token": "", "done": True})
 

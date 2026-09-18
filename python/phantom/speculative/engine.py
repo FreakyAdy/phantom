@@ -17,6 +17,7 @@ from phantom.speculative.acceptance import AcceptanceResult, SpeculativeAcceptor
 from phantom.speculative.draft_runner import DraftRunner
 from phantom.speculative.kv_cache import SpeculativeKVCache
 from phantom.speculative.target_verifier import TargetVerifier
+from phantom.prefetch import create_prefetcher_for_model, MoEExpertAwarePrefetcher
 
 
 @dataclass
@@ -36,7 +37,7 @@ class SpeculativeMetrics:
     prefetch_time_seconds: float = 0.0
     total_weight_bytes_read: int = 0
     bytes_per_accepted_token_mb: float = 0.0
-    baseline_tok_per_sec: float = 2.88
+    baseline_tok_per_sec: float = 0.0  # Must be set from real measurement
     speedup_factor: float = 1.0
     prefetch_hit_rate: float = 0.0
     fusion_calls: int = 0
@@ -98,7 +99,8 @@ class SpeculativeEngine:
         self,
         prefix_ids: torch.Tensor,
     ) -> Dict[str, torch.Tensor]:
-        """Run target forward to capture fusion-layer hidden states for EAGLE."""
+        """Run target forward to capture fusion-layer hidden states for EAGLE.
+        Returns (features, past_key_values) to provide prefix KV cache for verification."""
         hidden_dim = getattr(self.target_verifier, "hidden_dim", 5120)
         device = getattr(self.target_verifier, "device", "cpu")
 
@@ -108,7 +110,7 @@ class SpeculativeEngine:
                     outputs = self.target_verifier.model(
                         prefix_ids.to(self.target_verifier.device),
                         output_hidden_states=True,
-                        use_cache=False,
+                        use_cache=True,
                     )
                 if hasattr(outputs, "hidden_states") and outputs.hidden_states:
                     fusion_layers = [0, 30, 60, 79]
@@ -119,17 +121,19 @@ class SpeculativeEngine:
                             features[f"h{layer_idx}"] = hs[layer_idx][:, -1, :].cpu()
                     if features and hasattr(self.draft_runner, "set_features"):
                         self.draft_runner.set_features(features)
-                    return features
+                    # Return both features and KV cache for prefix context
+                    return features, getattr(outputs, "past_key_values", None)
             except Exception:
                 pass
 
+        # Fallback: synthetic features but no KV cache
         features = {
             f"h{layer}": torch.randn(1, hidden_dim)
             for layer in [0, 30, 60, 79]
         }
         if hasattr(self.draft_runner, "set_features"):
             self.draft_runner.set_features(features)
-        return features
+        return features, None
 
     def generate(
         self,
@@ -160,24 +164,26 @@ class SpeculativeEngine:
 
         emitted_tokens_all: List[int] = []
 
+        target_past_kv = None
         while len(emitted_tokens_all) < max_new_tokens:
             remaining = max_new_tokens - len(emitted_tokens_all)
             cur_k = min(step_k, remaining)
 
             if self.spec_mode == "eagle":
-                self._capture_eagle_features(current_ids)
+                features, eagle_past_kv = self._capture_eagle_features(current_ids)
+                # Use EAGLE's KV cache as prefix for target verification
+                if eagle_past_kv is not None:
+                    target_past_kv = eagle_past_kv
 
             prefetch_start = time.perf_counter()
             if self.prefetch_scheduler is not None and self.prefetch_scheduler.enabled:
-                hidden_for_prefetch = torch.randn(
-                    getattr(self.target_verifier, "hidden_dim", 5120)
-                )
                 vram_layers = set(range(getattr(self.target_verifier, "gpu_layers", 14)))
+                # Use current layer (0 for first round, then increment) and position
+                current_layer = len(emitted_tokens_all) // max(1, self.spec_k)
                 self.prefetch_scheduler.schedule_for_spec_round(
-                    hidden_state=hidden_for_prefetch,
-                    current_layer=0,
+                    current_layer=current_layer,
                     position=prefix_len + len(emitted_tokens_all),
-                    draft_tokens=[],
+                    draft_tokens=draft_tokens if 'draft_tokens' in locals() else [],
                     vram_layers=vram_layers,
                 )
             metrics.prefetch_time_seconds += time.perf_counter() - prefetch_start
@@ -198,19 +204,20 @@ class SpeculativeEngine:
                 self.target_verifier.verify_candidates(
                     prefix_ids=current_ids,
                     candidate_tokens=draft_tokens,
-                    past_key_values=self.kv_cache.target_past_kv,
+                    past_key_values=target_past_kv if target_past_kv is not None else self.kv_cache.target_past_kv,
                 )
             )
+            # After first round, use the returned KV cache for subsequent rounds
+            if target_past_kv is not None and self.kv_cache.target_past_kv is not None:
+                target_past_kv = self.kv_cache.target_past_kv
             metrics.verify_time_seconds += verify_ms / 1000.0
 
-            if self.cpu_moe and not getattr(self.target_verifier, "cpu_moe", False):
-                bytes_read = bytes_read // 10
-            if self.q3_enabled:
-                bytes_read = int(bytes_read * 0.85)
+            # Remove fabricated accounting (bytes//10 for cpu_moe, *0.85 for q3)
             metrics.total_weight_bytes_read += bytes_read
 
             if self.kernel_dispatch is not None:
-                metrics.fusion_calls += self.kernel_dispatch.fusion_calls
+                # Use delta to avoid double-counting
+                metrics.fusion_calls = self.kernel_dispatch.fusion_calls
 
             result: AcceptanceResult = self.acceptor.verify(
                 draft_tokens=draft_tokens,

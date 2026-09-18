@@ -226,4 +226,59 @@ This document catalogs critical architectural decisions, engineering trade-offs,
 * **Consequences**:
   - Positive: Multiplicative speedup stack (speculation × fusion × prefetch × quant × sparsity) pursues maximum achievable tok/s on consumer hardware.
   - Negative: Reintroduces subsystem complexity; ~18–20 week implementation timeline; dense 32B → 14 tok/s remains physically impossible.
+---
+
+### ADR-017: llama.cpp-First Hybrid Backend Adoption
+* **Context**: The PHANTOM in-house GGUF loader + PyTorch path had fabricated benchmarks, silent zero-fallback dequantization for Q5_K/Q5_1, and unwired Triton kernels. Meanwhile, `llama-cpp-python` (proven working underneath Ollama via `real_audit_32b_execution.py` at ~2.88 tok/s) provides battle-tested GGUF dequantization, real MoE routing, mmap tiering, fused kernels, and native speculative decoding.
+* **Decision**: Adopt `llama-cpp-python` as the primary real measurement baseline and production decode path. Keep PHANTOM tiering/telemetry/CLI layers and re-wire v2 ideas (EAGLE, expert prefetch, Q3 MLP) as measured add-ons on top.
+* **Rationale**: Fastest real tok/s with least new low-level code. The in-house Python stack remains for research (EAGLE-3 training, custom kernels) but is clearly marked SIMULATION until real.
+* **Consequences**:
+  - Positive: Immediate honest baseline (~2.88 tok/s on 32B), real MoE routing, native speculative decoding via draft models, zero fabricated metrics.
+  - Negative: Abandons pure-Python inference path for production; llama.cpp becomes hard dependency.
+
+---
+
+### ADR-018: Measurement-Only Publishing (Dry-Run Never Labeled Live)
+* **Context**: Multiple artifacts (`colab_runner.py`, `colab_v2_runner.py`, `generate_results.py`, `test_16_phantom_v2_colab.md`, `cloud_results_*.json`) published dry-run simulation numbers (24.79 tok/s, 13.73 tok/s, 3900 tok/s) with "VERIFIED", "LIVE", or "PASS" labels.
+* **Decision**: Strict separation of dry-run and live measurements in all outputs. `generate_results.py` must render `dry_run: true` blocks with explicit "NOT MEASURED" labels. No `VERIFIED`/`LIVE`/`PASS` stamps on simulated data. All benchmarks must source numbers from `benchmarks/results/latest.json` (single source of truth).
+* **Consequences**:
+  - Positive: Eliminates the fabricated-verification layer; users can trust every published number.
+  - Negative: Requires rebuilding `RESULTS.md` from clean measurements; some historical claims must be retracted or marked SIMULATED.
+
+---
+
+### ADR-019: Fabrication Layer Purge (Ephemeral Test Runner, Colab Runner, run_all.py)
+* **Context**: The test/benchmark infrastructure had a thick layer of synthetic results stamped "PASS — Verified": `ephemeral_test_runner.py` had `passed=True` placeholder; `colab_runner.py` had unconditional `status: "PASS"`; `run_all.py` used `math.sin` + hardcoded offsets for "measured" benchmarks; `test_reference_parity.py` used random logits + scaled Gaussian noise making parity gate structurally un-failable.
+* **Decision**: Complete purge of fabrication layer:
+  1. `ephemeral_test_runner.py`: Replaced placeholder with real llama.cpp inference.
+  2. `colab_runner.py`: Removed unconditional PASS; added real inference path; dry-run mode clearly labeled.
+  3. `run_all.py`: Replaced sine-wave/hardcoded benchmarks with real measurements (llama.cpp inference, GEMM amortization, NVMe I/O, memory bandwidth); removed broken `test_needle_haystack` import.
+  4. `test_reference_parity.py`: Graceful skip if llama-cpp-python unavailable; validates engine consistency on real model.
+  5. Deleted fabricated artifacts (`test_03_qwen3_30b_a3b_cloud.md`, `cloud_results_qwen3-30b-a3b_*.json`).
+* **Consequences**:
+  - Positive: CI gates now validate against real measurements; no fabricated numbers can pass as "verified".
+  - Negative: Requires llama-cpp-python for full test suite; some tests gracefully skip if unavailable.
+
+---
+
+### ADR-020: CPU Batch GEMM Amortization via n_batch Tuning
+* **Context**: `scratch/bench_gemm_vs_gemv.py` proved 4.32× amortization factor for batched GEMM(8) vs sequential GEMV(1) on Qwen-32B MLP dimensions (D=5120, F=27648). This is the single largest single-factor speedup opportunity for RAM-resident layers.
+* **Decision**: Expose `n_batch` parameter in `LlamaCppEngine`, `cmd_run` (`--n-batch`), and `benchmarks/run_real.py`. Default to 512; auto-tune based on model size and available RAM. Run ablation in `run_real.py` to find optimal batch size per model.
+* **Consequences**:
+  - Positive: Directly applies the proven 4.32× amortization to real inference; user-controllable for hardware-specific tuning.
+  - Negative: Requires llama.cpp backend; benefit only materializes on RAM-resident layers (not VRAM layers).
+
+---
+
+### ADR-021: MoE Expert-Aware Streaming (Real Wraith v2)
+* **Context**: The LSTM-based Wraith v2 prefetch predictor (`wraith_v2.py` original) used `torch.randn` hidden states and simulated prefetch by setting boolean flags. It never performed real I/O.
+* **Decision**: Replace LSTM simulation with MoE expert-aware prefetcher:
+  1. Use known MoE architecture (`MOE_ARCHITECTURES`) to identify which layers have MoE and their expert counts.
+  2. Track expert activation patterns during inference (heuristic: prefetch top-K most recently used experts per MoE layer).
+  3. Issue OS-level prefetch hints (`posix_fadvise`/`madvise`/`mmap` touch) for expert weight regions in GGUF file.
+  4. Only prefetch for layers in RAM/NVMe tiers (not VRAM).
+  5. Expose real metrics: `total_prefetch_requests`, `total_bytes_prefetched`, `hit_rate` from actual staging buffer.
+* **Consequences**:
+  - Positive: Real expert-aware prefetching that actually issues OS-level I/O hints; tracks actual expert activation; no fake metrics.
+  - Negative: Cannot directly observe llama.cpp's internal MoE routing from Python; uses heuristic based on known architecture. Requires OS support for `posix_fadvise`/`madvise`.
 

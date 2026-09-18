@@ -83,6 +83,7 @@ from phantom.loader import patch_transformers_gguf_gpu
 from phantom.model_profiles.hardware_detect import detect_hardware
 from phantom.phantomfile import PhantomfileParser
 from phantom.registry import IndexClient, ModelManager
+from phantom.runtime import create_engine_for_model, LlamaCppEngine
 
 
 class PhantomCLI:
@@ -1362,6 +1363,7 @@ class PhantomCLI:
 
         # Handle hardware offloading and v2 speculative flags
         ngl = getattr(args, "n_gpu_layers", 0)
+        n_batch = getattr(args, "n_batch", 512)
         spec_draft = getattr(args, "spec_draft", None)
         spec_k = getattr(args, "spec_k", 5)
         cpu_moe = getattr(args, "cpu_moe", False)
@@ -1420,59 +1422,67 @@ class PhantomCLI:
                 print()
                 return 0
 
-        # Single prompt execution with live local inference if model is available
-        gguf_path = self._find_gguf_path(model_id)
-        if gguf_path:
-            try:
-                import logging
-                import threading
-                import torch
-                from transformers import AutoModelForCausalLM, AutoTokenizer, TextIteratorStreamer
-                from phantom.loader import patch_transformers_gguf_gpu
+        # Use llama.cpp backend for real inference (primary path)
+        print(f"\n[PHANTOM] Loading model via llama.cpp backend...")
+        try:
+            speculative = v2_spec_enabled and spec_draft is not None
+            draft_model_id = spec_draft if speculative else None
+            
+            engine = create_engine_for_model(
+                model_id=model_id,
+                n_gpu_layers=ngl,
+                n_ctx=4096,
+                n_batch=n_batch,
+                speculative=speculative,
+                draft_model_id=draft_model_id,
+            )
+            engine.load()
 
-                patch_transformers_gguf_gpu()
+            print(f"[PHANTOM] Model loaded: {engine.metrics.n_gpu_layers}/{engine.metrics.n_total_layers} GPU layers")
+            if speculative:
+                print(f"[PHANTOM] Speculative decoding enabled with draft model: {draft_model_id}")
 
-                logging.getLogger("transformers").setLevel(logging.ERROR)
-                logging.getLogger("accelerate").setLevel(logging.ERROR)
-                device = self._torch_device()
-                load_kwargs = {"low_cpu_mem_usage": True}
-                if device == "cuda":
-                    load_kwargs["torch_dtype"] = torch.bfloat16
-                try:
-                    import accelerate  # noqa: F401
-                    load_kwargs["device_map"] = "auto"
-                except ImportError:
-                    pass
-                tokenizer = AutoTokenizer.from_pretrained(str(gguf_path.parent), gguf_file=gguf_path.name)
-                model = AutoModelForCausalLM.from_pretrained(str(gguf_path.parent), gguf_file=gguf_path.name, **load_kwargs)
-                if "device_map" not in load_kwargs:
-                    model.to(device)
+            result = engine.generate(
+                prompt=prompt,
+                max_tokens=256,
+                temperature=0.7,
+                top_p=0.95,
+                top_k=40,
+                repeat_penalty=1.1,
+                stream=True,
+            )
 
-                messages = [{"role": "user", "content": prompt}]
-                try:
-                    prompt_text = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
-                except Exception:
-                    prompt_text = f"User: {prompt}\nAssistant: "
-
-                inputs = tokenizer(prompt_text, return_tensors="pt").to(model.device)
-                streamer = TextIteratorStreamer(tokenizer, skip_prompt=True, skip_special_tokens=True)
-                gen_kwargs = dict(**inputs, streamer=streamer, max_new_tokens=256, do_sample=True, temperature=0.7,
-                          repetition_penalty=1.1, no_repeat_ngram_size=4)
-                thread = threading.Thread(target=model.generate, kwargs=gen_kwargs)
-                thread.start()
-
-                for new_text in streamer:
-                    sys.stdout.write(new_text)
-                    sys.stdout.flush()
-                thread.join()
+            if isinstance(result, str):
+                print(result)
                 print()
-                return 0
-            except Exception:
-                pass
+            else:
+                for token in result:
+                    sys.stdout.write(token)
+                    sys.stdout.flush()
+                print()
 
-        # PHANTOM v2 Speculative Execution Path
+            metrics = engine.get_metrics()
+            print("\n" + "=" * 62)
+            print("PHANTOM llama.cpp BACKEND TELEMETRY")
+            print("=" * 62)
+            print(f"  Generated Tokens:       {metrics.total_tokens_generated}")
+            print(f"  Throughput:             {metrics.tokens_per_second:.2f} tok/s")
+            print(f"  TTFT:                   {metrics.ttft_ms:.1f} ms")
+            print(f"  GPU Layers:             {metrics.n_gpu_layers}/{metrics.n_total_layers}")
+            print(f"  CPU Batch Size:         {n_batch}")
+            print(f"  Total Weight Bytes:     {metrics.total_weight_bytes / (1024**3):.2f} GB")
+            print(f"  VRAM Used:              {metrics.vram_used_gb:.2f} GB")
+            print("=" * 62 + "\n")
+
+            engine.unload()
+            return 0
+
+        except Exception as e:
+            print(f"[PHANTOM] llama.cpp backend error: {e}")
+
+        # PHANTOM v2 Speculative Execution Path (experimental, for EAGLE-3 research)
         if v2_spec_enabled or cpu_moe:
-            print("\n[PHANTOM v2] Initializing MD Blueprint Speculative Runtime...")
+            print("\n[PHANTOM v2 EXPERIMENTAL] Initializing MD Blueprint Speculative Runtime...")
             try:
                 from phantom.speculative.model_loader import (
                     SpeculativeRuntimeConfig,
@@ -1511,13 +1521,13 @@ class PhantomCLI:
                         spec_k=spec_k, cpu_moe=cpu_moe, spec_mode=spec_mode or "draft",
                     )
 
-                print(f"[PHANTOM v2] Target: {model_id} ({config.n_gpu_layers} GPU layers)")
-                print(f"[PHANTOM v2] Mode: {config.spec_mode} | k={spec_k} | prefetch={config.prefetch_enabled} | fusion={config.fusion_enabled}")
+                print(f"[PHANTOM v2 EXPERIMENTAL] Target: {model_id} ({config.n_gpu_layers} GPU layers)")
+                print(f"[PHANTOM v2 EXPERIMENTAL] Mode: {config.spec_mode} | k={spec_k} | prefetch={config.prefetch_enabled} | fusion={config.fusion_enabled}")
 
                 text, metrics = engine.generate(prompt=prompt, max_new_tokens=32, k=spec_k)
                 print(f"\nResponse: {text}")
                 print("\n" + "=" * 62)
-                print("PHANTOM v2 SPECULATIVE DECODING TELEMETRY")
+                print("PHANTOM v2 EXPERIMENTAL TELEMETRY")
                 print("=" * 62)
                 print(f"  Spec Mode:              {metrics.spec_mode}")
                 print(f"  Generated Tokens:       {metrics.total_tokens_generated}")
@@ -1531,7 +1541,7 @@ class PhantomCLI:
                 print("=" * 62 + "\n")
                 return 0
             except Exception as e:
-                print(f"[PHANTOM v2] Execution error: {e}")
+                print(f"[PHANTOM v2 EXPERIMENTAL] Execution error: {e}")
 
         print(f"\n✗ Error: Model '{model_id}' weights could not be loaded for local execution.")
         print("  Please verify the model is installed with 'phantom list' or pulled via 'phantom pull'.\n")
@@ -1715,6 +1725,7 @@ def build_parser() -> argparse.ArgumentParser:
     run_p.add_argument("--system", help="System prompt override")
     run_p.add_argument("--format", default="text", choices=["text", "json"], help="Output format")
     run_p.add_argument("-ngl", "--n-gpu-layers", type=int, default=0, help="Number of layers to offload to GPU VRAM")
+    run_p.add_argument("--n-batch", type=int, default=512, help="Batch size for CPU GEMM amortization (default: 512)")
     run_p.add_argument("--spec-mode", choices=["eagle", "draft"], help="Speculative mode: eagle (EAGLE-3 heads) or draft (separate draft model)")
     run_p.add_argument("--spec-draft", help="Draft model ID (--spec-mode draft)")
     run_p.add_argument("--eagle-heads", help="Path to trained EAGLE-3 heads checkpoint")

@@ -530,9 +530,102 @@ class GGUFLoader:
                 
             return torch.from_numpy(weights.reshape(-1)[:n_elems]).to(torch.bfloat16).reshape(shape)
 
-        # Fallback for other experimental quants: warn and zero-fill or approximate
-        logger.warning("unsupported_gguf_quant_fallback", quant_type=int(quant_type))
-        return torch.zeros(shape, dtype=torch.bfloat16)
+        # 9. Q5_1 (block size 32: 2B fp16 scale + 2B fp16 min + 4B uint32 qh + 16B qs)
+        if quant_type == GGUFQuantType.Q5_1:
+            n_blocks = n_elems // 32
+            block_bytes = 24
+            raw = np.frombuffer(data[: n_blocks * block_bytes], dtype=np.uint8).reshape(n_blocks, block_bytes)
+            
+            d = raw[:, 0:2].copy().view(np.float16).astype(np.float32)
+            m = raw[:, 2:4].copy().view(np.float16).astype(np.float32)
+            qh_bytes = raw[:, 4:8]
+            qh = qh_bytes.copy().view(np.uint32)[:, 0]
+            qs = raw[:, 8:]
+            
+            weights = np.empty((n_blocks, 32), dtype=np.float32)
+            # Low 16
+            low_nib = (qs & 0x0F).astype(np.int8)
+            high_bit_low = ((qh[:, None] >> np.arange(16, dtype=np.uint32)) & 1).astype(np.int8)
+            q_low = (high_bit_low << 4) | low_nib
+            
+            # High 16
+            high_nib = ((qs >> 4) & 0x0F).astype(np.int8)
+            high_bit_high = ((qh[:, None] >> np.arange(16, 32, dtype=np.uint32)) & 1).astype(np.int8)
+            q_high = (high_bit_high << 4) | high_nib
+            
+            weights[:, 0:16] = q_low * d + m
+            weights[:, 16:32] = q_high * d + m
+            
+            return torch.from_numpy(weights.reshape(-1)[:n_elems]).to(torch.bfloat16).reshape(shape)
+
+        # 10. Q5_K (Superblock 256 weights: similar to Q4_K with additional qh)
+        if quant_type == GGUFQuantType.Q5_K:
+            n_blocks = n_elems // 256
+            block_bytes = 176
+            raw = np.frombuffer(data[: n_blocks * block_bytes], dtype=np.uint8).reshape(n_blocks, block_bytes)
+            
+            d = raw[:, 0:2].copy().view(np.float16).astype(np.float32)
+            dmin = raw[:, 2:4].copy().view(np.float16).astype(np.float32)
+            scales = raw[:, 4:16].reshape(n_blocks, 3, 4)
+            qh = raw[:, 16:48]
+            qs = raw[:, 48:]
+            
+            d_part = scales[:, 0]
+            m_part = scales[:, 1]
+            md_part = scales[:, 2]
+            
+            sc = np.empty((n_blocks, 8), dtype=np.float32)
+            m_val = np.empty((n_blocks, 8), dtype=np.float32)
+            
+            for j in range(4):
+                sc[:, j] = (scales[:, j] & 0x3F).astype(np.float32)
+                m_val[:, j] = (scales[:, j + 4] & 0x3F).astype(np.float32)
+            
+            for j in range(4, 8):
+                sc[:, j] = ((scales[:, j + 4] & 0x0F) | ((scales[:, j - 4] >> 6) << 4)).astype(np.float32)
+                m_val[:, j] = (((scales[:, j + 4] >> 4) & 0x0F) | ((scales[:, j] >> 6) << 4)).astype(np.float32)
+            
+            weights = np.empty((n_blocks, 256), dtype=np.float32)
+            
+            for sb in range(8):
+                sub_qs = qs[:, sb * 16 : (sb + 1) * 16]
+                sub_qh = qh[:, sb * 32 : (sb + 1) * 32]
+                
+                low = (sub_qs & 0x0F).astype(np.float32)
+                high = ((sub_qs >> 4) & 0x0F).astype(np.float32)
+                
+                # 4 bytes of qh per sub-block provide 32 2-bit values
+                qh0 = (sub_qh & 0x03).astype(np.float32)
+                qh1 = ((sub_qh >> 2) & 0x03).astype(np.float32)
+                qh2 = ((sub_qh >> 4) & 0x03).astype(np.float32)
+                qh3 = ((sub_qh >> 6) & 0x03).astype(np.float32)
+                qh_expanded = np.empty((n_blocks, 32), dtype=np.float32)
+                qh_expanded[:, 0:8] = qh0
+                qh_expanded[:, 8:16] = qh1
+                qh_expanded[:, 16:24] = qh2
+                qh_expanded[:, 24:32] = qh3
+                
+                q_val = low + (qh_expanded[:, 0:16] << 4)
+                q_val_high = high + (qh_expanded[:, 16:32] << 4)
+                
+                scale = d * sc[:, sb : sb + 1]
+                offset = dmin * m_val[:, sb : sb + 1]
+                
+                weights[:, sb * 32 : sb * 32 + 16] = q_val * scale - offset
+                weights[:, sb * 32 + 16 : (sb + 1) * 32] = q_val_high * scale - offset
+                
+            return torch.from_numpy(weights.reshape(-1)[:n_elems]).to(torch.bfloat16).reshape(shape)
+
+        # Fallback for unsupported quants: raise clear error instead of silent zeros
+        supported_types = [
+            GGUFQuantType.BF16, GGUFQuantType.F16, GGUFQuantType.F32,
+            GGUFQuantType.Q4_0, GGUFQuantType.Q4_1, GGUFQuantType.Q5_0, GGUFQuantType.Q5_1,
+            GGUFQuantType.Q8_0, GGUFQuantType.Q8_1, GGUFQuantType.Q4_K, GGUFQuantType.Q5_K, GGUFQuantType.Q6_K,
+        ]
+        raise NotImplementedError(
+            f"CPU dequantization not implemented for quant type {quant_type} ({int(quant_type)}). "
+            f"Supported types: {[t.name for t in supported_types]}. Use GPU (CUDA) path for more formats."
+        )
 
 
 def dequantize_tensor_cuda(

@@ -34,7 +34,10 @@ def test_adaptive_sparsity_gate():
     mask, report = gate.forward(hidden)
     assert mask.shape == (4, 512)
     assert 0.0 <= report.sparsity_fraction <= 1.0
-    assert report.gate_precision >= 0.85
+    # Gate precision is 0.0 (unvalidated) - requires real measurement on validation data
+    assert report.gate_precision == 0.0
+    # Speedup estimate is 1.0 (no real sparse GEMM)
+    assert report.mlp_speedup_estimate == 1.0
 
 
 def test_sparse_ffn_execution():

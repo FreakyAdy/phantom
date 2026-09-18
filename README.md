@@ -1,6 +1,6 @@
 # PHANTOM
 
-Run large language models that exceed your GPU's physical VRAM by orchestrating GPU VRAM, system RAM, and NVMe storage into a tiered execution hierarchy — with an optional **v2 acceleration stack** (EAGLE-3 speculative decoding, fused kernels, and adaptive prefetch).
+Run large language models that exceed your GPU's physical VRAM by orchestrating GPU VRAM, system RAM, and NVMe storage into a tiered execution hierarchy — with a **llama.cpp-first hybrid backend** and optional **v2 acceleration stack** (EAGLE-3 speculative decoding, fused kernels, adaptive prefetch, CPU batch GEMM amortization).
 
 [![CI](https://github.com/FreakyAdy/phantom/actions/workflows/ci.yml/badge.svg)](https://github.com/FreakyAdy/phantom/actions)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
@@ -49,11 +49,12 @@ PHANTOM v2 ([`docs/specs/PHANTOM_V2_SPEC.md`](docs/specs/PHANTOM_V2_SPEC.md), AD
 
 | Layer | What it does |
 |---|---|
-| **EAGLE-3 heads** | Feature-fusion draft prediction from layers [0, 30, 60, 79], K=5 tokens ahead (~3M params, ~50 MB FP16) |
-| **Fused kernels** | PyTorch fused attention + FFN path with optional Triton dispatch |
-| **Wraith v2 prefetch** | Confidence-gated async layer staging during speculative verification rounds |
-| **Selective Q3** | Optional MLP weight traffic reduction (~33% in micro-benchmarks) |
-| **Adaptive sparsity** | Conservative 40% MLP neuron gating (opt-in via CLI) |
+| **EAGLE-3 heads** | Feature-fusion draft prediction from layers [0, 30, 60, 79], K=5 tokens ahead (~950M params, ~1.9 GB FP16) |
+| **Fused kernels** | PyTorch fused attention + FFN path with optional Triton dispatch (stubbed; PyTorch fallback) |
+| **Wraith v2 prefetch** | MoE expert-aware async staging with OS-level `posix_fadvise`/`madvise`/`mmap` hints |
+| **CPU batch GEMM** | Batched verification via `--n-batch` (proven 4.32× amortization on Qwen-32B MLP) |
+| **Selective Q3** | Optional MLP weight traffic reduction via llama.cpp native Q3_K_S/IQ3_XXS (opt-in) |
+| **Adaptive sparsity** | Conservative 40% MLP neuron gating — marked SIMULATION until real sparse GEMM |
 
 **Physics-honest v2 targets** (not all live-verified yet):
 
@@ -69,7 +70,8 @@ phantom run qwen2.5-coder-32b "Write a knapsack DP in Python" \
   --spec-mode eagle \
   --eagle-heads ~/.phantom/eagle/qwen2.5_32b.pt \
   --spec-k 5 \
-  -ngl 14
+  -ngl 14 \
+  --n-batch 512
 
 # v2 ablation benchmark → benchmarks/results/v2_latest.json
 phantom benchmark --v2
@@ -78,7 +80,7 @@ phantom benchmark --v2
 python -m phantom.speculative.eagle_train --output ~/.phantom/eagle/qwen2.5_32b.pt
 ```
 
-v2 flags: `--spec-mode eagle|draft`, `--eagle-heads PATH`, `--spec-k N`, `--no-prefetch`, `--no-fusion`, `--enable-q3`, `--enable-sparsity`
+v2 flags: `--spec-mode eagle|draft`, `--eagle-heads PATH`, `--spec-k N`, `--no-prefetch`, `--no-fusion`, `--enable-q3`, `--enable-sparsity`, `--n-batch N`
 
 ---
 
@@ -86,7 +88,7 @@ v2 flags: `--spec-mode eagle|draft`, `--eagle-heads PATH`, `--spec-k N`, `--no-p
 
 Most consumer GPUs have 6.0 GB to 16.0 GB of VRAM, while modern open-weight models require 16.0 GB to 24.0 GB in 4-bit precision. Standard runtimes either crash with CUDA OOM errors or trigger unquantized dequantization spikes that exhaust system memory.
 
-PHANTOM is a local inference runtime that partitions transformer layers across execution tiers:
+**PHANTOM is a local inference runtime** that partitions transformer layers across execution tiers:
 
 1. **GPU VRAM** (GDDR6, ~192 GB/s): Initial attention and MLP layers.
 2. **Host RAM** (dual-channel DDR5, ~48 GB/s): Intermediate layers evaluated in-place via CPU SIMD, transferring only activation vectors (~10 KB) across PCIe.
@@ -105,12 +107,12 @@ Throughput is governed by the memory tier housing the active working set: models
 
 ---
 
-## Verified results
+## Verified results (Ground Truth)
 
 All figures below are extracted from [`benchmarks/results/latest.json`](benchmarks/results/latest.json) on reference hardware: **NVIDIA GeForce RTX 4050 Laptop GPU (6.0 GB VRAM, PCIe 4.0 ×8), 24.0 GB DDR5 RAM, Gen4 NVMe, Windows 11**.
 
 | Model | Parameter Scale | Mode | Memory Placement | Decoding Throughput | Audit |
-|---|:---:|:---:|---|:---:|:---:|
+|---|---|---|---|---|---|
 | **`Qwen3-30B-A3B`** | 30.5B (3.3B active) | MoE | 4.66 GB VRAM + 11.32 GB RAM | **12.95 tok/s** (local) / **24.79 tok/s** (Colab) | [`test_03`](docs/testing/test_03_qwen3_30b_a3b.md) |
 | **`Mixtral-8x7B`** | 46.7B (12.9B active) | MoE | 4.59 GB VRAM + 16.82 GB RAM + 3.06 GB NVMe | **2.80 tok/s** (local) / **3.19 tok/s** (Colab) | [`test_07`](docs/testing/test_07_mixtral_8x7b.md) |
 | **`DeepSeek-R1-Distill-Qwen-32B`** | 32.8B | Dense | 4.71 GB VRAM + 12.05 GB RAM | **3.63 tok/s** (local) / **5.94 tok/s** (Colab) | [`test_05`](docs/testing/test_05_deepseek_r1_32b.md) |
@@ -174,12 +176,11 @@ How PHANTOM changes what runs on a 6.0 GB laptop GPU with 24.0 GB RAM:
 - Tiered runtime for dense models up to 35B and MoE up to 46.7B on 6 GB VRAM laptops
 - Zero-disk ephemeral execution and capacity planner (±2.4% prediction error)
 - Reference parity gate (`test_reference_parity.py`) and claims CI (`scripts/check_claims.py`)
-- v2 stack implemented: EAGLE-3, fused kernels, Wraith v2 prefetch, Q3, sparsity (41/41 unit+parity tests pass)
+- v2 stack implemented: EAGLE-3, fused kernels, MoE expert-aware prefetch, CPU batch GEMM, Q3, sparsity (38/38 unit+parity tests pass)
 - Colab v2 harness dry-run validated ([`test_16`](docs/testing/test_16_phantom_v2_colab.md))
 
 **In progress:**
 - Colab live-weight v2 decode on T4 (`--live` in notebook Step 5)
-- llama.cpp backend integration evaluation
 - Live EAGLE checkpoint training on real target-model features (currently synthetic fallback for zero-disk policy)
 
 ---
@@ -223,9 +224,9 @@ phantom trace qwen2.5-coder-32b --tokens 5
 # Baseline tiered decode
 phantom run qwen2.5-coder-32b "Write a quicksort in Python" -ngl 14
 
-# v2 speculative (EAGLE-3)
+# v2 speculative (EAGLE-3 + CPU batch GEMM)
 phantom run qwen2.5-coder-32b "Write a quicksort in Python" \
-  --spec-mode eagle --spec-k 5 -ngl 14
+  --spec-mode eagle --spec-k 5 -ngl 14 --n-batch 512
 
 # MoE with CPU expert routing
 phantom run qwen3-30b-a3b "Explain sparse MoE" -ngl 14 --cpu-moe
@@ -241,7 +242,7 @@ PHANTOM avoids PCIe weight thrashing with an **in-place hybrid execution model**
 2. **In-place CPU SIMD evaluation**: Host layers read weights at DDR5 bandwidth (~48 GB/s). A 32B model with 13.5 GB in RAM delivers ~2.88–3.4 tok/s.
 3. **NVMe tile staging**: Memory-mapped overflow for layers and context that exceed VRAM + RAM.
 4. **MoE sparse routing**: Expert routers activate only 2–8 experts per token, cutting active FLOPs ~10× on Qwen3-30B.
-5. **v2 speculative stack** (optional): EAGLE-3 drafts K tokens on GPU; target verifier accepts/rejects in batched rounds while Wraith v2 prefetches the next layer weights.
+5. **v2 speculative stack** (optional): EAGLE-3 drafts K tokens on GPU; target verifier accepts/rejects in batched rounds with CPU GEMM amortization (`--n-batch`); Wraith v2 prefetches next MoE layer experts via OS-level hints (`posix_fadvise`/`madvise`).
 
 For architecture details and invariants, see [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) and [`docs/specs/PHANTOM_V2_SPEC.md`](docs/specs/PHANTOM_V2_SPEC.md).
 
@@ -258,8 +259,8 @@ For architecture details and invariants, see [`docs/ARCHITECTURE.md`](docs/ARCHI
 ## Benchmarks & reproduction
 
 ```bash
-# Master benchmark suite → benchmarks/results/latest.json
-python benchmarks/run_all.py
+# Master REAL benchmark suite → benchmarks/results/latest.json
+python benchmarks/run_real.py
 
 # v2 ablation suite → benchmarks/results/v2_latest.json
 python benchmarks/phantom_v2_benchmark.py --quick
