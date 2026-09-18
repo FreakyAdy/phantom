@@ -70,13 +70,15 @@ PHANTOM v2 ([`docs/specs/PHANTOM_V2_SPEC.md`](docs/specs/PHANTOM_V2_SPEC.md), AD
 | **Selective Q3** | Optional MLP weight traffic reduction via llama.cpp native Q3_K_S/IQ3_XXS (opt-in) |
 | **Adaptive sparsity** | Conservative 40% MLP neuron gating — marked SIMULATION until real sparse GEMM |
 
-**Physics-honest v2 targets** (not all live-verified yet):
+**Physics-honest v2 targets** (dry-run validated; live verification in progress):
 
-| Model tier | Measured baseline | v2 target |
-|---|---|---|
-| MoE 30B (`Qwen3-30B-A3B`) | 12.95 tok/s | 14–18 tok/s |
-| Dense 32B (`Qwen2.5-Coder-32B`) | 2.88 tok/s | 7–10 tok/s |
-| Dense 14B | ~5 tok/s est. | 14 tok/s |
+| Model tier | Measured baseline | v2 target | Status |
+|---|---|---|---|
+| MoE 30B (`Qwen3-30B-A3B`) | 12.95 tok/s | 14–18 tok/s | **Dry-run: 13.73 tok/s (sim)** |
+| Dense 32B (`Qwen2.5-Coder-32B`) | 2.88 tok/s | 7–10 tok/s | **Dry-run: 13.73 tok/s (sim)** |
+| Dense 14B | ~5 tok/s est. | 14 tok/s | Not tested |
+
+> **⚠️ All v2 numbers above are DRY-RUN SIMULATIONS** (`v2_latest.json` has `dry_run: true`, `live: false`). The 13.73 tok/s dry-run uses LCG draft tokens and forced 70% acceptance — not real model weights. Live Colab `--live` verification is pending (see DAILY_WORKBOARD.md). No v2 targets have been achieved on real hardware yet.
 
 ```bash
 # v2 speculative decode (requires GGUF weights + trained EAGLE checkpoint)
