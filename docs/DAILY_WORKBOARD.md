@@ -31,7 +31,13 @@
 | ✅ | `V2-BENCH` | Benchmarks | v2 ablation + cross-hardware suite | `benchmarks/phantom_v2_benchmark.py` |
 | ✅ | `V2-TEST` | Quality | 41 tests PASS + parity gates | `tests/unit/test_eagle_heads.py`, etc. |
 | ✅ | `V2-COLAB` | Cloud | Colab v2 harness + MoE correlation + notebook Step 5 | `scripts/colab_v2_runner.py`, `test_16` |
-| ⬜ | `V2-COLAB-LIVE` | Cloud | Live-weight Colab run on T4 (`--live` in notebook Step 5) | Pending user Colab session |
+| ✅ | `P0-REALPATH` | Runtime | Fix `cmd_run` AttributeError; real llama.cpp decode path; metrics (`ram_used_gb`, draft_model) | `phantom_cli.py`, `llamacpp_backend.py` |
+| ✅ | `P0-SKIP-GUARD` | Benchmarks | Graceful `SKIPPED_LLAMA_CPP_NOT_INSTALLED` before weight download | `run_real.py`, `ephemeral_test_runner.py`, `test_runtime_metrics.py` |
+| ✅ | `P1-PURGE-V2` | Refactoring | Delete model-free `phantom_v2_benchmark.py` + `v2_latest.json`; purge 2.5×/0.72 fabrication; honest dry-run/live-failure | `colab_v2_runner.py`, `generate_results.py`, `RESULTS.md` |
+| ✅ | `P1-REWIRE` | Integration | `benchmark --v2` → subprocess `run_real.py --focus spec-decode` (fixed module resolution); EMPTY `spec_decode` → `SKIPPED` in `latest.json` | `phantom_cli.py`, `latest.json` |
+| ✅ | `P1-DOCS` | Truthfulness | ADR-022/023; `test_16` VOIDED; `test_03` 24.79 removed; README Ollama-vs-PHANTOM table + no v2 achieved | `docs/`, `README.md` |
+| ✅ | `P1-NOTEBOOK` | Cloud | Notebook Step 1 llama-cpp-python CUDA build; Step 5 real spec-decode sweep (EAGLE runner removed) | `notebooks/phantom_cloud_tester.ipynb` |
+| ⬜ | `V2-COLAB-LIVE` | Cloud | **Live spec-decode run on Colab T4** (commit+push first, then notebook Step 5 LIVE): `qwen2.5-coder-32b` draft `qwen2.5-0.5b`, `--ngl ∈ {0,14,24}` × `--n-batch ∈ {256,512,1024}` | Pending user Colab session + results ingestion |
 
 
 ---
@@ -84,15 +90,13 @@ flowchart LR
 
 When starting the next session, here is our queued roadmap:
 
-- [ ] **Colab live v2 run**: Open [`notebooks/phantom_cloud_tester.ipynb`](notebooks/phantom_cloud_tester.ipynb) Step 5, select **Live Cloud Inference**, run on T4 with `--live`.
-- [ ] **Live-weight E2E v2 on RTX 4050**: `phantom run qwen2.5-coder-32b --spec-mode eagle -ngl 14` with ephemeral runner + EAGLE checkpoint.
-- [ ] **Evaluate llama.cpp backend integration** for GGUF decode path.
-- [ ] **Restore full PHANTOM_Research_Analysis.md body** under `docs/specs/` if needed for reference.
-- [ ] **One number, one source remediation**: replace hardcoded metric constants (4.2 tok/s, 7.8 KV, 61.2% sparsity, 87.3% wraith, thermal 67°C) with reads from `benchmarks/results/latest.json`.
+- [ ] **Colab live spec-decode run (v2 targets)**: After commit+push, open [`notebooks/phantom_cloud_tester.ipynb`](notebooks/phantom_cloud_tester.ipynb) Step 5, select **Live Cloud Inference**, run `qwen2.5-coder-32b` draft `qwen2.5-0.5b` with `--ngl ∈ {0,14,24}` × `--n-batch ∈ {256,512,1024}` sweeps; export `latest.json` (Step 4) and ingest.
+- [ ] **Close the gap to v2 targets**: Baselines (2.88 / 12.95 / 3.63 tok/s) → targets (7-10 / 14-18 / 14). Levers to measure: `--no-mmap`, Q3_K_S, stronger drafts (qwen2.5-1.5b), batch tuning; declare achievement only with real `spec_decode` rows in `latest.json`.
+- [ ] **Evaluate llama.cpp backend integration** for GGUF decode path (ADR-017 follow-up; native draft verified).
+- [ ] **Residual §10 invariant hygiene**: replace hardcoded constants still shipping (`phantom_tui.py:2711-2716` 4.2 tok/s, `model_manager.py:110`, `claims_allowlist.yml`, stale docs `PHANTOMFILE.md`/`PLUGINS.md`/`CONCEPT_MAP.md`/`toolextensio.md`) with `latest.json` reads.
 - [ ] **Resolve doc contradictions**: SmolLM 1000 vs 366.5 tok/s; NVMe 1.43 vs 1.75 vs ~4.5 GB/s; CUDA 12.6 vs 13.3; dense-32B ceiling vs 3.63 tok/s publish.
 - [ ] **Fix or remove Triton stubs**: `kernels/attention/fused_attention.py` and `kernels/ffn/fused_ffn.py` call PyTorch fallback in all branches; `kernels/dispatch.py` arg-order bug (`use_triton`→`scale_q`/`scale_w1`).
-- [ ] **Clean up `claims_allowlist.yml`**: remove fabricated 4.2 tok/s family and other auto-approved values.
-- [ ] **Reconcile stale docs**: `PHANTOMFILE.md`, `PLUGINS.md`, `CONCEPT_MAP.md`, `toolextensio.md` still reference purged subsystems (Neural Cache, Spectral Quantization).
+- [ ] **Verify/delete** leftover `changelog_entry.md` temp file at repo root.
 - [ ] **Regenerate `RESULTS.md`** from clean commit (fingerprint `b451e11b (DIRTY)`).
 - [ ] **Auto-tune n_batch** in `benchmarks/run_real.py` for optimal CPU GEMM amortization per model.
 
@@ -123,3 +127,4 @@ When starting the next session, here is our queued roadmap:
 | **2026-09-18** | v2 Colab Harness | Built `scripts/colab_v2_runner.py`, MoE prefetch correlation module, notebook Step 5, merged v2 into `RESULTS.md`; dry-run PASS (`test_16`). |
 | **2026-09-18** | Full-Repo Analysis (read-only) | Audited all 166 source/doc files (~28k lines). Confirmed real hardware layer (Ollama 32B audit, bandwidth/GEMM/NVMe measurements, acceptance + live draft/verify). Flagged fabricated-verdict layer: `ephemeral_test_runner` & `colab_runner` unconditional PASS, `run_all.py` sine-wave + broken `test_needle_haystack` import, dry-run published as "Colab Live VERIFIED", EAGLE on synthetic data, Triton stub kernels, hardcoded 4.2 tok/s metric family. Recorded in TODAY.md queue. |
 | **2026-09-18** | Truth-First Remediation & llama.cpp-First Backend | **Phase 0-4 Complete**: Purged fabrication layer (ephemeral_test_runner, colab_runner, run_all.py, test_reference_parity); adopted llama.cpp-first hybrid backend (ADR-017); implemented real measurement gates (run_real.py, CI); built MoE expert-aware prefetch (ADR-021) with OS-level I/O hints; exposed n_batch for CPU GEMM amortization (ADR-020); added ADR-017 through ADR-021; all 38 unit tests PASS; parity gate PASS. |
+| **2026-09-18/19** | Physics-Honest v2 — Real Spec-Decode Path (Phases 0-1) | Fixed `cmd_run` AttributeError (real llama.cpp path now executes); llama-cpp draft metrics + graceful SKIPPED guard; `run_real.py --focus spec-decode` + sweeps CLI; deleted model-free `phantom_v2_benchmark.py` + fabricated `v2_latest.json`; `colab_v2_runner.py` no longer fabricates (ADR-022/023); `benchmark --v2` rewired; RESULTS.md section 6 honest SKIPPED; `test_16` VOIDED + `test_03` 24.79 removed; notebook Step 1/5 updated; **43/43 unit tests PASS**; parity PASS; end-to-end CLI→SKIPPED→latest.json verified. |

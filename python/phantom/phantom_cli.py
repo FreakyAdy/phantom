@@ -1669,7 +1669,7 @@ class PhantomCLI:
         try:
             if v2:
                 import subprocess as _subprocess
-                from benchmarks.run_real import REPO_ROOT as _repo_root
+                _repo_root = Path(__file__).resolve().parents[2]
 
                 cmd = [
                     sys.executable,

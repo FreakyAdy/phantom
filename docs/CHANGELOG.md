@@ -4,6 +4,37 @@ All notable changes, bug fixes, architectural refactors, and performance calibra
 
 ---
 
+## [Unreleased] — 2026-09-18/19 (Physics-Honest v2: Real Spec-Decode Path, Phases 0–1)
+
+### Added — Real llama.cpp Measurement Path (Phase 0)
+* `benchmarks/run_real.py`: New `benchmark_spec_decode()` — real baseline vs native draft-model decode, `speedup_factor`, `n_acceptance` accounting; new CLI args `--focus`, `--model`, `--draft-model`, `--ngl`, `--n-batch`, `--iterations`, `--max-tokens`.
+* `python/phantom/runtime/llamacpp_backend.py`: `_measure_ram_gb()` (best-effort psutil, else 0.0); `ram_used_gb` on `LlamaCppMetrics`; `draft_model`/`draft_model_id` metric fields; `draft_model_id` on `LlamaCppEngine.__init__`; `create_engine_for_model` passes it through.
+* `tests/unit/test_runtime_metrics.py`: 5 smoke tests (draft-model metric defaults, `ram_used_gb` always present, spec-decode skip shimmer, CLI arg parse).
+
+### Fixed — Real Decode Path Executes (Phase 0)
+* `python/phantom/phantom_cli.py` `cmd_run`: `engine.metrics.n_gpu_layers` AttributeError → `engine.get_metrics()`; previously every run fell through to the simulated stack (root cause of no real v2 measurements).
+* `benchmarks/run_real.py` + `tests/ephemeral_test_runner.py`: graceful `SKIPPED_LLAMA_CPP_NOT_INSTALLED` with early guard **before** any weight download.
+
+### Removed — Residual v2 Fabrication (Phase 1, ADR-023)
+* Deleted `benchmarks/phantom_v2_benchmark.py` (model-free harness: no-model engines, 3923 tok/s `draft_only`, acceptance 1.0) and fabricated `benchmarks/results/v2_latest.json`.
+* `scripts/colab_v2_runner.py`: removed `sim.tok_per_sec * 2.5`, `acceptance_rate=0.72`, dry-run simulation branches; live failure → `live_measurement_failed`; dry-run → `SIMULATED_DISABLED_MEASUREMENT` (tok/s=None); `run_v2_ablation` returns `DEPRECATED_MODEL_FREE_SIMULATION_REMOVED`.
+
+### Changed — Canonical v2 Numbering (Phase 1)
+* `benchmarks/run_real.py`: `verified_models` — removed fabricated `measured_tok_s_cloud_t4: 24.79`; added `qwen2.5-coder-32b_spec_decode` dynamic entry only when measured.
+* `scripts/generate_results.py`: v2 section (## 6) renders only real `spec_decode` rows from `latest.json`; `V2_LATEST_JSON` dependency and merging removed; `generate_markdown()` signature updated. `RESULTS.md` regenerated: section 6 = honest `SKIPPED_LLAMA_CPP_NOT_INSTALLED`.
+* `python/phantom/phantom_cli.py` `cmd_benchmark`: v2 branch → subprocess `run_real.py --focus spec-decode`; repo root resolved via `Path(__file__).parents[2]` (fixed `No module named 'benchmarks'` when run from `python/`).
+
+### Docs / Ledgers — Truth-First (Phase 1)
+* `docs/DECISION_LOG.md`: ADR-022 (llama.cpp native draft spec-decode is the carried v2 mechanism; EAGLE deferred), ADR-023 (residual fabrication purge).
+* `docs/testing/test_16_phantom_v2_colab.md`: VOIDED banner (ADR-023); `docs/testing/INDEX.md` test_16 row VOIDED, test_03 row: 24.79 cloud figure removed; `docs/testing/test_03_qwen3_30b_a3b.md`: N/A + provenance note.
+* `README.md`: added "PHANTOM vs Ollama (Direct Comparison on RTX 4050 Laptop)" table; v2-targets section flagged DRY-RUN SIMULATIONS — no v2 target achieved on real hardware yet.
+* `notebooks/phantom_cloud_tester.ipynb`: Step 1 builds llama-cpp-python from source (CUDA `GGML_CUDA=on`, CPU fallback); Step 5 replaced EAGLE runner with `run_real.py --focus spec-decode` sweep (`--ngl` × `--n-batch`); Step 5 markdown rewritten.
+
+### Verified
+* `python -m pytest tests/unit/` → **43/43 PASS**; parity gate `tests/correctness/test_reference_parity.py --quick` → PASS; `phantom benchmark qwen2.5-coder-32b --v2` → subprocess → graceful `SKIPPED_LLAMA_CPP_NOT_INSTALLED` → `latest.json` + `history/run_*.json` written; `scripts/generate_results.py` → RESULTS.md section 6 honest.
+
+---
+
 ## [Unreleased] — 2026-09-18 (Truth-First Remediation & llama.cpp-First Backend)
 
 ### Fixed — Fabrication Layer Purge (ADR-019)

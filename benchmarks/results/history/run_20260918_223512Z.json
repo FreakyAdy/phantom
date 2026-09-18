@@ -1,7 +1,7 @@
 {
-  "generated_at_utc": "2026-09-18T22:37:23.250496+00:00",
+  "generated_at_utc": "2026-09-18T22:35:12.447907+00:00",
   "environment_fingerprint": {
-    "timestamp_utc": "2026-09-18T22:37:23.233345+00:00",
+    "timestamp_utc": "2026-09-18T22:35:12.430834+00:00",
     "git_sha": "1ba93731e7ddf4c77acbf5e57879b0cf01edbc2d",
     "git_dirty": true,
     "gpu_name": "NVIDIA GeForce RTX 4050 Laptop GPU",
@@ -13,8 +13,8 @@
     "cpu": "Intel64 Family 6 Model 183 Stepping 1, GenuineIntel",
     "ram_total_gb": 23.78,
     "nvme_model": "NVMe Gen4 SSD",
-    "nvme_seq_read_gbs": 2.05,
-    "nvme_seq_write_gbs": 0.72,
+    "nvme_seq_read_gbs": 1.95,
+    "nvme_seq_write_gbs": 0.67,
     "os": "Windows 11",
     "python": "3.14.3",
     "torch": "2.10.0+cu126",
@@ -22,7 +22,7 @@
     "model_id": "qwen2.5-coder:32b",
     "model_bytes": 19800000000,
     "quantization": "q4_k_m",
-    "thermal_state_at_start_c": 55
+    "thermal_state_at_start_c": 56
   },
   "benchmarks": {
     "spec_decode": {
